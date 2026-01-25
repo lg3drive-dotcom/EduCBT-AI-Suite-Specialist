@@ -52,9 +52,10 @@ const QuestionList: React.FC<Props> = ({
           typeStr.includes('jamak') ||
           typeStr.includes('kompleks');
         
+        const isBS = q.type === QuestionType.KompleksBS;
+        
         return (
           <div key={q.id} className={`relative bg-white rounded-xl border shadow-sm overflow-hidden transition-all ${isTrashView ? 'opacity-75 border-slate-200 grayscale-[0.3]' : 'border-slate-200 hover:border-indigo-200'}`}>
-            {/* Loading Overlay Per Card */}
             {q.isRegenerating && (
               <div className="absolute inset-0 bg-white/80 z-20 flex flex-col items-center justify-center backdrop-blur-[1px]">
                 <div className="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mb-2"></div>
@@ -64,7 +65,6 @@ const QuestionList: React.FC<Props> = ({
 
             <div className="bg-slate-50 px-4 py-2.5 border-b border-slate-200 flex flex-wrap justify-between items-center gap-4">
               <div className="flex items-center gap-3">
-                {/* Edit Nomor Urut Langsung */}
                 <div className="flex items-center gap-1.5" title="Ubah Nomor Urut">
                   <span className="text-[10px] font-black text-slate-400">#</span>
                   <input 
@@ -77,7 +77,6 @@ const QuestionList: React.FC<Props> = ({
                   />
                 </div>
                 
-                {/* Edit Token Langsung */}
                 <div className="flex items-center gap-1.5" title="Ubah Token Paket">
                   <span className="text-[10px] font-black text-slate-400">TOKEN:</span>
                   <input 
@@ -91,7 +90,6 @@ const QuestionList: React.FC<Props> = ({
 
                 <div className="h-4 w-[1px] bg-slate-200 mx-1 hidden sm:block"></div>
                 
-                {/* Type Selector Dropdown */}
                 <div className="flex items-center gap-1.5" title="Ubah Tipe Soal (Otomatis via AI)">
                   <span className="text-[10px] font-black text-slate-400">TIPE:</span>
                   <select
@@ -156,7 +154,6 @@ const QuestionList: React.FC<Props> = ({
               </div>
             </div>
 
-            {/* Form Instruksi Regenerate */}
             {promptingId === q.id && (
               <div className="bg-emerald-50 p-4 border-b border-emerald-100 flex flex-col gap-3 animate-in slide-in-from-top duration-300">
                 <div className="flex items-center gap-2">
@@ -200,27 +197,64 @@ const QuestionList: React.FC<Props> = ({
                   </div>
                 )}
                 <div className="flex-1">
-                  {isMultiChoice && (
+                  {(isMultiChoice || isBS) && (
                     <p className="text-rose-600 font-black text-xs mb-2 italic flex items-center gap-2">
                       <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" /></svg>
-                      (Jawaban bisa lebih dari satu)
+                      {isBS ? "(Tentukan Benar atau Salah pada setiap pernyataan)" : "(Jawaban bisa lebih dari satu)"}
                     </p>
                   )}
                   <p className="text-slate-800 font-medium whitespace-pre-wrap text-base leading-relaxed">{q.text}</p>
                 </div>
               </div>
 
-              {q.options && q.options.length > 0 && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {q.options.map((opt, i) => (
-                    <div key={i} className="p-3 rounded-xl border bg-slate-50 border-slate-100 flex items-center gap-3">
-                      <span className="inline-block w-6 h-6 leading-6 text-center rounded-lg border text-[10px] font-black bg-white text-slate-400 border-slate-200">
-                        {String.fromCharCode(65 + i)}
-                      </span>
-                      <span className="text-sm font-medium text-slate-600">{opt}</span>
-                    </div>
-                  ))}
+              {isBS ? (
+                <div className="overflow-x-auto border border-slate-200 rounded-xl">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-200 text-left">
+                        <th className="px-4 py-3 font-black uppercase text-[10px] text-slate-500">No</th>
+                        <th className="px-4 py-3 font-black uppercase text-[10px] text-slate-500">Pernyataan</th>
+                        <th className="px-4 py-3 font-black uppercase text-[10px] text-slate-500 text-center">{q.tfLabels?.true || 'Benar'}</th>
+                        <th className="px-4 py-3 font-black uppercase text-[10px] text-slate-500 text-center">{q.tfLabels?.false || 'Salah'}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {q.options.map((opt, i) => (
+                        <tr key={i} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/50">
+                          <td className="px-4 py-3 font-bold text-slate-400">{i+1}</td>
+                          <td className="px-4 py-3 text-slate-700">{opt}</td>
+                          <td className="px-4 py-3 text-center">
+                            <div className={`w-5 h-5 mx-auto rounded border-2 flex items-center justify-center transition-all ${ (q.correctAnswer as boolean[])[i] ? 'bg-emerald-500 border-emerald-500' : 'border-slate-200' }`}>
+                              {(q.correctAnswer as boolean[])[i] && (
+                                <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="4" d="M5 13l4 4L19 7" /></svg>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            <div className={`w-5 h-5 mx-auto rounded border-2 flex items-center justify-center transition-all ${ !(q.correctAnswer as boolean[])[i] ? 'bg-rose-500 border-rose-500' : 'border-slate-200' }`}>
+                              {!(q.correctAnswer as boolean[])[i] && (
+                                <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="4" d="M5 13l4 4L19 7" /></svg>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
+              ) : (
+                q.options && q.options.length > 0 && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {q.options.map((opt, i) => (
+                      <div key={i} className="p-3 rounded-xl border bg-slate-50 border-slate-100 flex items-center gap-3">
+                        <span className="inline-block w-6 h-6 leading-6 text-center rounded-lg border text-[10px] font-black bg-white text-slate-400 border-slate-200">
+                          {String.fromCharCode(65 + i)}
+                        </span>
+                        <span className="text-sm font-medium text-slate-600">{opt}</span>
+                      </div>
+                    ))}
+                  </div>
+                )
               )}
               
               {q.explanation && (

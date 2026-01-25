@@ -17,6 +17,7 @@ const GenerationForm: React.FC<Props> = ({ onGenerate, onImportJson, isLoading }
       [QuestionType.PilihanGanda]: 5,
       [QuestionType.MCMA]: 0,
       [QuestionType.Kompleks]: 0,
+      [QuestionType.KompleksBS]: 0,
       [QuestionType.Isian]: 0,
       [QuestionType.Uraian]: 0,
     },
@@ -47,7 +48,6 @@ const GenerationForm: React.FC<Props> = ({ onGenerate, onImportJson, isLoading }
     if (!files || files.length === 0) return;
 
     let allQuestions: EduCBTQuestion[] = [];
-    // Explicitly type file as File to avoid 'unknown' type errors on line 63 and 67
     const filePromises = Array.from(files).map((file: File) => {
       return new Promise<void>((resolve) => {
         const reader = new FileReader();
@@ -57,7 +57,6 @@ const GenerationForm: React.FC<Props> = ({ onGenerate, onImportJson, isLoading }
             if (Array.isArray(json)) {
               allQuestions = [...allQuestions, ...json];
             } else if (json && typeof json === 'object') {
-              // Jika file berisi 1 objek soal saja
               allQuestions.push(json as EduCBTQuestion);
             }
           } catch (err) {
@@ -74,7 +73,7 @@ const GenerationForm: React.FC<Props> = ({ onGenerate, onImportJson, isLoading }
       onImportJson(allQuestions);
       alert(`${allQuestions.length} soal berhasil digabungkan.`);
     }
-    e.target.value = ''; // Reset input
+    e.target.value = '';
   };
 
   const extractPdfText = async (data: ArrayBuffer): Promise<string> => {
@@ -224,15 +223,6 @@ const GenerationForm: React.FC<Props> = ({ onGenerate, onImportJson, isLoading }
             ))}
           </select>
         </div>
-      </div>
-
-      <div className="bg-slate-100 p-4 rounded-xl border-2 border-slate-300 flex items-start gap-3">
-        <div className="bg-slate-500 text-white p-1 rounded-full flex-shrink-0">
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-        </div>
-        <p className="text-[11px] font-bold text-slate-600 leading-snug uppercase italic">
-          Gunakan <span className="text-indigo-600">Unggah Dokumen</span> atau <span className="text-emerald-600">Tulis Manual</span> untuk menentukan cakupan materi.
-        </p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

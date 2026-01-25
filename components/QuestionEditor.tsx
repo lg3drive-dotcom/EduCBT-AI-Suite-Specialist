@@ -12,7 +12,8 @@ interface Props {
 const QuestionEditor: React.FC<Props> = ({ question, onSave, onClose }) => {
   const [edited, setEdited] = useState<EduCBTQuestion>({ 
     ...question,
-    optionImages: question.optionImages || question.options.map(() => null)
+    optionImages: question.optionImages || question.options.map(() => null),
+    tfLabels: question.tfLabels || (question.type === QuestionType.KompleksBS ? { true: 'Benar', false: 'Salah' } : undefined)
   });
 
   const handleOptionChange = (idx: number, text: string) => {
@@ -41,8 +42,25 @@ const QuestionEditor: React.FC<Props> = ({ question, onSave, onClose }) => {
       const updated = [...current];
       updated[idx] = !updated[idx];
       setEdited({ ...edited, correctAnswer: updated });
+    } else if (edited.type === QuestionType.KompleksBS) {
+      const current = Array.isArray(edited.correctAnswer) ? (edited.correctAnswer as boolean[]) : edited.options.map(() => false);
+      const updated = [...current];
+      updated[idx] = !updated[idx];
+      setEdited({ ...edited, correctAnswer: updated });
     }
   };
+
+  const handleTfLabelChange = (key: 'true' | 'false', value: string) => {
+    setEdited({
+      ...edited,
+      tfLabels: {
+        ...(edited.tfLabels || { true: 'Benar', false: 'Salah' }),
+        [key]: value
+      }
+    });
+  };
+
+  const isBS = edited.type === QuestionType.KompleksBS;
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-md">
@@ -58,6 +76,29 @@ const QuestionEditor: React.FC<Props> = ({ question, onSave, onClose }) => {
         </div>
 
         <div className="flex-grow overflow-y-auto p-8 space-y-8 bg-white">
+          {isBS && (
+            <div className="bg-purple-50 p-4 rounded-xl border border-purple-200 grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-[10px] font-black text-purple-700 uppercase mb-1">Label Nilai TRUE</label>
+                <input 
+                  type="text" 
+                  className="w-full px-3 py-2 rounded-lg border border-purple-300 text-sm font-bold"
+                  value={edited.tfLabels?.true}
+                  onChange={(e) => handleTfLabelChange('true', e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-purple-700 uppercase mb-1">Label Nilai FALSE</label>
+                <input 
+                  type="text" 
+                  className="w-full px-3 py-2 rounded-lg border border-purple-300 text-sm font-bold"
+                  value={edited.tfLabels?.false}
+                  onChange={(e) => handleTfLabelChange('false', e.target.value)}
+                />
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
             <div className="lg:col-span-7 space-y-6">
               <div className="bg-blue-50/30 p-5 rounded-2xl border border-blue-100">
@@ -81,36 +122,54 @@ const QuestionEditor: React.FC<Props> = ({ question, onSave, onClose }) => {
 
             <div className="lg:col-span-5 space-y-6">
               <div className="bg-emerald-50/30 p-5 rounded-2xl border border-emerald-100">
-                <label className="block text-xs font-black text-emerald-900 uppercase tracking-widest mb-4">Pilihan Jawaban</label>
+                <label className="block text-xs font-black text-emerald-900 uppercase tracking-widest mb-4">
+                  {isBS ? 'Daftar Pernyataan' : 'Pilihan Jawaban'}
+                </label>
                 <div className="space-y-4">
                   {edited.options.map((opt, i) => (
                     <div key={i} className="group bg-white p-4 rounded-xl border border-emerald-100 shadow-sm hover:shadow-md transition-all space-y-3">
                       <div className="flex items-center gap-3">
-                        <div className="relative">
-                          <input 
-                            type={edited.type === QuestionType.PilihanGanda ? "radio" : "checkbox"} 
-                            checked={
-                              Array.isArray(edited.correctAnswer) 
-                                ? (typeof edited.correctAnswer[0] === 'boolean' ? edited.correctAnswer[i] : (edited.correctAnswer as number[]).includes(i))
-                                : edited.correctAnswer === i
-                            }
-                            onChange={() => handleCorrectAnswerChange(i)}
-                            className="w-6 h-6 text-emerald-600 rounded-full border-2 border-emerald-200 focus:ring-emerald-500 cursor-pointer"
-                          />
+                        <div className="flex flex-col items-center gap-1">
+                          {isBS ? (
+                            <button 
+                              type="button"
+                              onClick={() => handleCorrectAnswerChange(i)}
+                              className={`px-3 py-1 rounded text-[10px] font-black uppercase transition-all ${
+                                (edited.correctAnswer as boolean[])[i] 
+                                  ? 'bg-emerald-600 text-white' 
+                                  : 'bg-slate-200 text-slate-600'
+                              }`}
+                            >
+                              {(edited.correctAnswer as boolean[])[i] ? edited.tfLabels?.true : edited.tfLabels?.false}
+                            </button>
+                          ) : (
+                            <input 
+                              type={edited.type === QuestionType.PilihanGanda ? "radio" : "checkbox"} 
+                              checked={
+                                Array.isArray(edited.correctAnswer) 
+                                  ? (typeof edited.correctAnswer[0] === 'boolean' ? edited.correctAnswer[i] as boolean : (edited.correctAnswer as number[]).includes(i))
+                                  : edited.correctAnswer === i
+                              }
+                              onChange={() => handleCorrectAnswerChange(i)}
+                              className="w-6 h-6 text-emerald-600 rounded-full border-2 border-emerald-200 focus:ring-emerald-500 cursor-pointer"
+                            />
+                          )}
                         </div>
                         <input 
                           type="text" 
                           value={opt}
                           onChange={(e) => handleOptionChange(i, e.target.value)}
                           className="flex-grow bg-transparent border-b-2 border-slate-100 focus:border-emerald-400 outline-none py-1 text-sm font-bold text-slate-700"
-                          placeholder={`Ketik opsi ${String.fromCharCode(65+i)}...`}
+                          placeholder={`Ketik ${isBS ? 'Pernyataan' : 'Opsi'} ${String.fromCharCode(65+i)}...`}
                         />
                       </div>
-                      <ImageControl 
-                        label={`Gambar Opsi ${String.fromCharCode(65+i)}`}
-                        currentImage={edited.optionImages?.[i] || undefined}
-                        onImageChange={(img) => handleOptionImageChange(i, img)}
-                      />
+                      {!isBS && (
+                        <ImageControl 
+                          label={`Gambar Opsi ${String.fromCharCode(65+i)}`}
+                          currentImage={edited.optionImages?.[i] || undefined}
+                          onImageChange={(img) => handleOptionImageChange(i, img)}
+                        />
+                      )}
                     </div>
                   ))}
                 </div>

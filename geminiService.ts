@@ -8,11 +8,16 @@ Tugas: Buat soal AKM/HOTS dalam JSON array yang valid.
 
 Field Utama yang WAJIB ada:
 1. "text": Narasi atau pertanyaan soal (JANGAN GUNAKAN FIELD 'question').
-2. "options": Array string pilihan jawaban (minimal 4 untuk PG).
+2. "options": Array string pilihan jawaban (minimal 4 untuk PG, minimal 3 untuk Kompleks B/S).
 3. "correctAnswer": Indeks jawaban benar (0-n), atau array sesuai tipe.
 4. "type": Tipe soal.
 5. "level": Level kognitif (L1, L2, atau L3).
 6. "explanation": Penjelasan rinci.
+7. "tfLabels": (Hanya untuk tipe 'Pilihan Ganda Kompleks (B/S)') Objek berisi {"true": "Benar", "false": "Salah"} atau variasi lainnya.
+
+Aturan Tipe 'Pilihan Ganda Kompleks (B/S)':
+- correctAnswer harus berupa array boolean [true, false, ...].
+- tfLabels wajib ada.
 `;
 
 const SINGLE_QUESTION_SCHEMA = {
@@ -23,7 +28,14 @@ const SINGLE_QUESTION_SCHEMA = {
     text: { type: Type.STRING },
     explanation: { type: Type.STRING },
     options: { type: Type.ARRAY, items: { type: Type.STRING } },
-    correctAnswer: { type: Type.STRING }
+    correctAnswer: { type: Type.STRING, description: "Bisa berupa angka, array angka, atau array boolean stringified" },
+    tfLabels: {
+      type: Type.OBJECT,
+      properties: {
+        true: { type: Type.STRING },
+        false: { type: Type.STRING }
+      }
+    }
   },
   required: ["type", "level", "text", "options", "correctAnswer", "explanation"]
 };
@@ -83,8 +95,9 @@ export const changeQuestionType = async (oldQuestion: EduCBTQuestion, newType: Q
   1. Pertahankan teks soal asli semaksimal mungkin.
   2. Rancang ulang "options" dan "correctAnswer" agar sesuai dengan format ${newType}.
   3. Jika format baru adalah Pilihan Jamak/MCMA, buat minimal 2 jawaban benar.
-  4. Jika format baru adalah Isian/Uraian, kosongkan "options" dan berikan kunci jawaban yang sesuai di "correctAnswer".
-  5. Perbarui "explanation" (pembahasan) agar relevan dengan kunci jawaban baru.`;
+  4. Jika format baru adalah Pilihan Ganda Kompleks (B/S), buat minimal 3 pernyataan di options, correctAnswer berupa array boolean, dan sertakan tfLabels.
+  5. Jika format baru adalah Isian/Uraian, kosongkan "options" dan berikan kunci jawaban yang sesuai di "correctAnswer".
+  6. Perbarui "explanation" (pembahasan) agar relevan dengan kunci jawaban baru.`;
 
   try {
     const response = await ai.models.generateContent({
@@ -102,7 +115,7 @@ export const changeQuestionType = async (oldQuestion: EduCBTQuestion, newType: Q
       ...parsed, 
       id: oldQuestion.id, 
       order: oldQuestion.order,
-      type: newType // Memastikan tipe benar-benar terupdate
+      type: newType 
     }, {
       subject: oldQuestion.subject,
       phase: oldQuestion.phase,
@@ -159,13 +172,31 @@ export const regenerateSingleQuestion = async (oldQuestion: EduCBTQuestion, cust
 
 const normalizeQuestion = (q: any, config: any): EduCBTQuestion => {
   let correctedAnswer = q.correctAnswer;
-  if (typeof correctedAnswer === 'string' && (correctedAnswer.startsWith('[') || correctedAnswer.startsWith('{'))) {
-    try { correctedAnswer = JSON.parse(correctedAnswer); } catch(e) {}
+  
+  // Handle stringified array or boolean string
+  if (typeof correctedAnswer === 'string') {
+    if (correctedAnswer.startsWith('[') || correctedAnswer.startsWith('{')) {
+      try { correctedAnswer = JSON.parse(correctedAnswer); } catch(e) {}
+    } else if (correctedAnswer.toLowerCase() === 'true') {
+      correctedAnswer = true;
+    } else if (correctedAnswer.toLowerCase() === 'false') {
+      correctedAnswer = false;
+    }
   }
 
   // Basic normalization logic
   if (q.type === QuestionType.PilihanGanda && typeof correctedAnswer !== 'number') {
     correctedAnswer = parseInt(correctedAnswer) || 0;
+  }
+
+  // Handle B/S type normalization
+  if (q.type === QuestionType.KompleksBS) {
+    if (!Array.isArray(correctedAnswer)) {
+      correctedAnswer = q.options.map(() => false);
+    }
+    if (!q.tfLabels) {
+      q.tfLabels = { "true": "Benar", "false": "Salah" };
+    }
   }
 
   return {

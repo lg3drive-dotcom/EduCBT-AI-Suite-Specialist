@@ -11,6 +11,8 @@ const getSoalHtml = (questions: EduCBTQuestion[]) => {
       typeStr.includes('kompleks');
   };
 
+  const isBS = (q: EduCBTQuestion) => q.type === QuestionType.KompleksBS;
+
   return `
     <div id="pdf-content-wrapper" style="font-family: 'Times New Roman', serif; padding: 50px; color: black; background: white; width: 700px; margin: 0 auto; line-height: 1.6;">
       <div style="text-align: center; font-weight: bold; font-size: 16pt; text-transform: uppercase; margin-bottom: 5px;">NASKAH SOAL UJIAN</div>
@@ -30,19 +32,44 @@ const getSoalHtml = (questions: EduCBTQuestion[]) => {
             <div style="font-weight: bold; min-width: 30px; font-size: 12pt;">${idx + 1}.</div>
             <div style="flex: 1;">
               ${isMultiChoice(q) ? `<div style="color: #d11; font-weight: bold; font-style: italic; font-size: 10pt; margin-bottom: 8px;">(Jawaban bisa lebih dari satu)</div>` : ''}
+              ${isBS(q) ? `<div style="color: #d11; font-weight: bold; font-style: italic; font-size: 10pt; margin-bottom: 8px;">(Tentukan ${q.tfLabels?.true || 'Benar'} atau ${q.tfLabels?.false || 'Salah'} pada setiap pernyataan)</div>` : ''}
+              
               <div style="font-weight: bold; margin-bottom: 12px; font-size: 12pt; text-align: justify;">${q.text || ''}</div>
               ${q.image ? `<div style="margin: 15px 0;"><img src="${q.image}" style="max-width: 100%; height: auto; border: 1px solid #ddd; display: block;" /></div>` : ''}
               
               <div style="margin-top: 12px; margin-left: 5px;">
-                ${(q.options || []).map((opt, oIdx) => `
-                  <div style="margin-bottom: 10px; display: flex; gap: 12px; align-items: flex-start;">
-                    <span style="font-weight: bold; min-width: 25px;">${String.fromCharCode(65 + oIdx)}.</span>
-                    <div style="flex: 1;">
-                      <div style="font-size: 11pt;">${opt || ''}</div>
-                      ${q.optionImages?.[oIdx] ? `<div style="margin-top: 8px;"><img src="${q.optionImages[oIdx]}" style="max-width: 200px; height: auto; border: 1px solid #eee;" /></div>` : ''}
+                ${isBS(q) ? `
+                  <table style="width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 11pt;">
+                    <thead>
+                      <tr style="background-color: #f9f9f9;">
+                        <th style="border: 1px solid black; padding: 5px; text-align: center; width: 50px;">No</th>
+                        <th style="border: 1px solid black; padding: 5px; text-align: left;">Pernyataan</th>
+                        <th style="border: 1px solid black; padding: 5px; text-align: center; width: 60px;">${q.tfLabels?.true || 'B'}</th>
+                        <th style="border: 1px solid black; padding: 5px; text-align: center; width: 60px;">${q.tfLabels?.false || 'S'}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${q.options.map((opt, i) => `
+                        <tr>
+                          <td style="border: 1px solid black; padding: 5px; text-align: center;">${i+1}</td>
+                          <td style="border: 1px solid black; padding: 5px;">${opt}</td>
+                          <td style="border: 1px solid black; padding: 5px; text-align: center;"></td>
+                          <td style="border: 1px solid black; padding: 5px; text-align: center;"></td>
+                        </tr>
+                      `).join('')}
+                    </tbody>
+                  </table>
+                ` : `
+                  ${(q.options || []).map((opt, oIdx) => `
+                    <div style="margin-bottom: 10px; display: flex; gap: 12px; align-items: flex-start;">
+                      <span style="font-weight: bold; min-width: 25px;">${String.fromCharCode(65 + oIdx)}.</span>
+                      <div style="flex: 1;">
+                        <div style="font-size: 11pt;">${opt || ''}</div>
+                        ${q.optionImages?.[oIdx] ? `<div style="margin-top: 8px;"><img src="${q.optionImages[oIdx]}" style="max-width: 200px; height: auto; border: 1px solid #eee;" /></div>` : ''}
+                      </div>
                     </div>
-                  </div>
-                `).join('')}
+                  `).join('')}
+                `}
               </div>
             </div>
           </div>
@@ -65,11 +92,17 @@ const getSoalHtml = (questions: EduCBTQuestion[]) => {
               if (typeof q.correctAnswer === 'number') {
                 key = String.fromCharCode(65 + q.correctAnswer);
               } else if (Array.isArray(q.correctAnswer)) {
-                key = q.correctAnswer.map((val, i) => {
-                  if (typeof val === 'boolean') return val ? String.fromCharCode(65 + i) : null;
-                  if (typeof val === 'number') return String.fromCharCode(65 + val);
-                  return null;
-                }).filter(v => v !== null).join(', ');
+                if (q.type === QuestionType.KompleksBS) {
+                  key = q.correctAnswer.map((val, i) => {
+                    return val ? q.tfLabels?.true?.[0] || 'B' : q.tfLabels?.false?.[0] || 'S';
+                  }).join(', ');
+                } else {
+                  key = q.correctAnswer.map((val, i) => {
+                    if (typeof val === 'boolean') return val ? String.fromCharCode(65 + i) : null;
+                    if (typeof val === 'number') return String.fromCharCode(65 + val);
+                    return null;
+                  }).filter(v => v !== null).join(', ');
+                }
               }
               return `
                 <tr>
@@ -156,13 +189,11 @@ const generatePdfFromHtml = async (html: string, filename: string) => {
 
     let heightLeft = imgHeight;
     let position = 0;
-    const verticalOffset = 15; // Offset aman untuk pemotongan halaman
+    const verticalOffset = 15;
 
-    // Halaman pertama
     pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
     heightLeft -= (pdfHeight - verticalOffset);
 
-    // Halaman selanjutnya
     while (heightLeft > 0) {
       position = heightLeft - imgHeight;
       pdf.addPage();
