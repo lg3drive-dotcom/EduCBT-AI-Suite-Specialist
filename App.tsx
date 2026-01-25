@@ -5,8 +5,8 @@ import GenerationForm from './components/GenerationForm';
 import QuestionList from './components/QuestionList';
 import JsonPreview from './components/JsonPreview';
 import QuestionEditor from './components/QuestionEditor';
-import { EduCBTQuestion, GenerationConfig } from './types';
-import { generateEduCBTQuestions, regenerateSingleQuestion } from './geminiService';
+import { EduCBTQuestion, GenerationConfig, QuestionType } from './types';
+import { generateEduCBTQuestions, regenerateSingleQuestion, changeQuestionType } from './geminiService';
 import { downloadSoalDoc, downloadKisiKisiDoc, downloadSoalPdf, downloadKisiKisiPdf } from './utils/exportUtils';
 
 const App: React.FC = () => {
@@ -82,16 +82,29 @@ const App: React.FC = () => {
     }
   };
 
+  const handleChangeType = async (id: string, newType: QuestionType) => {
+    const target = questions.find(q => q.id === id);
+    if (!target) return;
+
+    setQuestions(prev => prev.map(q => q.id === id ? { ...q, isRegenerating: true } : q));
+
+    try {
+      const updatedQuestion = await changeQuestionType(target, newType);
+      setQuestions(prev => prev.map(q => q.id === id ? { ...updatedQuestion, isRegenerating: false } : q));
+    } catch (err) {
+      alert("Gagal mengubah tipe soal. Silakan coba lagi.");
+      setQuestions(prev => prev.map(q => q.id === id ? { ...q, isRegenerating: false } : q));
+    }
+  };
+
   const handleUpdateQuestion = (updated: EduCBTQuestion) => {
     setQuestions(prev => prev.map(q => q.id === updated.id ? updated : q));
     setEditingId(null);
   };
 
-  // Fungsi khusus untuk update cepat (Order & Token)
   const handleQuickUpdate = (id: string, field: 'order' | 'quizToken', value: any) => {
     setQuestions(prev => prev.map(q => {
       if (q.id === id) {
-        // Jika field adalah order, pastikan disimpan sebagai angka jika memungkinkan
         let finalValue = value;
         if (field === 'order' && value !== "") {
           finalValue = parseInt(value);
@@ -172,6 +185,7 @@ const App: React.FC = () => {
                     onRestore={(id) => toggleTrash(id, false)}
                     onRegenerate={handleRegenerateQuestion}
                     onQuickUpdate={handleQuickUpdate}
+                    onChangeType={handleChangeType}
                     isTrashView={activeTab === 'trash'}
                   />
                 ) : (

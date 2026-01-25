@@ -10,6 +10,7 @@ interface Props {
   onRegenerate?: (id: string, instructions?: string) => void;
   onPermanentDelete?: (id: string) => void;
   onQuickUpdate?: (id: string, field: 'order' | 'quizToken', value: string | number) => void;
+  onChangeType?: (id: string, newType: QuestionType) => void;
   isTrashView?: boolean;
 }
 
@@ -21,6 +22,7 @@ const QuestionList: React.FC<Props> = ({
   onRegenerate,
   onPermanentDelete, 
   onQuickUpdate,
+  onChangeType,
   isTrashView = false 
 }) => {
   const [promptingId, setPromptingId] = useState<string | null>(null);
@@ -56,7 +58,7 @@ const QuestionList: React.FC<Props> = ({
             {q.isRegenerating && (
               <div className="absolute inset-0 bg-white/80 z-20 flex flex-col items-center justify-center backdrop-blur-[1px]">
                 <div className="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mb-2"></div>
-                <span className="text-[10px] font-black text-indigo-700 uppercase tracking-widest text-center px-4">AI sedang merancang soal pengganti...</span>
+                <span className="text-[10px] font-black text-indigo-700 uppercase tracking-widest text-center px-4">AI sedang merancang ulang soal...</span>
               </div>
             )}
 
@@ -89,8 +91,24 @@ const QuestionList: React.FC<Props> = ({
 
                 <div className="h-4 w-[1px] bg-slate-200 mx-1 hidden sm:block"></div>
                 
+                {/* Type Selector Dropdown */}
+                <div className="flex items-center gap-1.5" title="Ubah Tipe Soal (Otomatis via AI)">
+                  <span className="text-[10px] font-black text-slate-400">TIPE:</span>
+                  <select
+                    className="px-2 py-1 bg-white border border-slate-200 rounded text-[10px] font-bold text-slate-600 outline-none focus:ring-2 focus:ring-indigo-400 transition-all cursor-pointer"
+                    value={q.type}
+                    onChange={(e) => onChangeType && onChangeType(q.id, e.target.value as QuestionType)}
+                  >
+                    {Object.values(QuestionType).map(type => (
+                      <option key={type} value={type}>{type}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="h-4 w-[1px] bg-slate-200 mx-1 hidden sm:block"></div>
+                
                 <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 hidden sm:inline">
-                  {q.level} • {q.type}
+                  {q.level}
                 </span>
               </div>
               

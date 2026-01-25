@@ -46,13 +46,15 @@ export const generateEduCBTQuestions = async (config: GenerationConfig): Promise
     .map(([level, count]) => `${count} level ${level}`)
     .join(', ');
 
-  const prompt = `Buat ${Object.values(config.typeCounts).reduce((a, b) => a + b, 0)} soal ${config.subject} (${config.phase}). 
+  const totalQuestionsCount = (Object.values(config.typeCounts) as number[]).reduce((a, b) => a + b, 0);
+
+  const prompt = `Buat ${totalQuestionsCount} soal ${config.subject} (${config.phase}). 
   Materi: ${config.material}. Komposisi: ${typeRequirements} & ${levelRequirements}. Token: ${config.quizToken}.
   ${config.referenceText ? `Referensi: ${config.referenceText.substring(0, 3000)}` : ''}`;
 
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-3-pro-preview',
       contents: prompt,
       config: {
         systemInstruction: SYSTEM_INSTRUCTION,
@@ -65,6 +67,52 @@ export const generateEduCBTQuestions = async (config: GenerationConfig): Promise
     return parsed.map((q: any) => normalizeQuestion(q, config));
   } catch (error) {
     console.error("Generation error:", error);
+    throw error;
+  }
+};
+
+export const changeQuestionType = async (oldQuestion: EduCBTQuestion, newType: QuestionType): Promise<EduCBTQuestion> => {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  
+  const prompt = `TUGAS: UBAH TIPE SOAL INI.
+  TEKS SOAL ASLI: "${oldQuestion.text}"
+  TIPE ASLI: ${oldQuestion.type}
+  TIPE BARU YANG DIMINTA: ${newType}
+  
+  INSTRUKSI:
+  1. Pertahankan teks soal asli semaksimal mungkin.
+  2. Rancang ulang "options" dan "correctAnswer" agar sesuai dengan format ${newType}.
+  3. Jika format baru adalah Pilihan Jamak/MCMA, buat minimal 2 jawaban benar.
+  4. Jika format baru adalah Isian/Uraian, kosongkan "options" dan berikan kunci jawaban yang sesuai di "correctAnswer".
+  5. Perbarui "explanation" (pembahasan) agar relevan dengan kunci jawaban baru.`;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-3-pro-preview',
+      contents: prompt,
+      config: {
+        systemInstruction: SYSTEM_INSTRUCTION,
+        responseMimeType: "application/json",
+        responseSchema: SINGLE_QUESTION_SCHEMA
+      }
+    });
+
+    const parsed = JSON.parse(response.text || "{}");
+    return normalizeQuestion({ 
+      ...parsed, 
+      id: oldQuestion.id, 
+      order: oldQuestion.order,
+      type: newType // Memastikan tipe benar-benar terupdate
+    }, {
+      subject: oldQuestion.subject,
+      phase: oldQuestion.phase,
+      material: oldQuestion.material,
+      quizToken: oldQuestion.quizToken,
+      typeCounts: {},
+      levelCounts: {}
+    });
+  } catch (error) {
+    console.error("Type Change Error:", error);
     throw error;
   }
 };
@@ -85,7 +133,7 @@ export const regenerateSingleQuestion = async (oldQuestion: EduCBTQuestion, cust
 
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-3-pro-preview',
       contents: prompt,
       config: {
         systemInstruction: SYSTEM_INSTRUCTION,
