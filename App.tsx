@@ -18,9 +18,17 @@ const App: React.FC = () => {
   
   const [editingId, setEditingId] = useState<string | null>(null);
 
-  // Mengurutkan soal berdasarkan properti 'order' secara otomatis
+  // LOGIKA BARU: Urutkan berdasarkan quizToken, lalu berdasarkan order
   const sortedQuestions = useMemo(() => {
     return [...questions].sort((a, b) => {
+      // 1. Bandingkan Token Paket (Alfabetis)
+      const tokenA = (a.quizToken || "").toString().toLowerCase();
+      const tokenB = (b.quizToken || "").toString().toLowerCase();
+      
+      if (tokenA < tokenB) return -1;
+      if (tokenA > tokenB) return 1;
+      
+      // 2. Jika Token sama, bandingkan Nomor Urut (Numerik)
       const orderA = typeof a.order === 'number' ? a.order : parseInt(a.order as any) || 0;
       const orderB = typeof b.order === 'number' ? b.order : parseInt(b.order as any) || 0;
       return orderA - orderB;
@@ -60,7 +68,9 @@ const App: React.FC = () => {
         id: q.id || `imported_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         isDeleted: q.isDeleted ?? false,
         isRegenerating: false,
-        order: q.order || (prev.length + i + 1)
+        // Pastikan order dan token terjaga saat import
+        order: q.order || (prev.length + i + 1),
+        quizToken: q.quizToken || ""
       }));
       return [...prev, ...sanitized];
     });
@@ -122,9 +132,16 @@ const App: React.FC = () => {
     setQuestions(prev => prev.map(q => q.id === id ? { ...q, isDeleted } : q));
   };
 
+  // Auto-Urut juga disesuaikan agar tetap mengelompokkan per token
   const reorderSequentially = () => {
     setQuestions(prev => {
-      const active = prev.filter(q => !q.isDeleted).sort((a, b) => (a.order || 0) - (b.order || 0));
+      const active = [...prev].filter(q => !q.isDeleted).sort((a, b) => {
+        const tokenA = (a.quizToken || "").toString().toLowerCase();
+        const tokenB = (b.quizToken || "").toString().toLowerCase();
+        if (tokenA < tokenB) return -1;
+        if (tokenA > tokenB) return 1;
+        return (a.order || 0) - (b.order || 0);
+      });
       const trashed = prev.filter(q => q.isDeleted);
       
       const reorderedActive = active.map((q, i) => ({ ...q, order: i + 1 }));
@@ -164,7 +181,7 @@ const App: React.FC = () => {
                       <button 
                         onClick={reorderSequentially}
                         className="px-3 py-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg text-[10px] font-black uppercase hover:bg-emerald-100 transition-colors"
-                        title="Urutkan nomor 1, 2, 3... secara otomatis"
+                        title="Urutkan nomor 1, 2, 3... berdasarkan kelompok token"
                       >
                         Auto-Urut
                       </button>
@@ -191,7 +208,7 @@ const App: React.FC = () => {
                 ) : (
                   <JsonPreview questions={activeQuestions} />
                 )}
-                {loading && <div className="p-8 text-center animate-pulse text-indigo-600 font-black">MENAMBAH SOAL BARU...</div>}
+                {loading && <div className="p-8 text-center animate-pulse text-indigo-600 font-black">MENAMBAH/MEMPERBARUI SOAL...</div>}
               </div>
             ) : (
               <div className="h-[400px] flex items-center justify-center border-2 border-dashed border-slate-200 rounded-3xl bg-white text-slate-400 text-center px-8 italic">

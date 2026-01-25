@@ -15,9 +15,23 @@ Field Utama yang WAJIB ada:
 6. "explanation": Penjelasan rinci.
 7. "tfLabels": (Hanya untuk tipe 'Pilihan Ganda Kompleks (B/S)') Objek berisi {"true": "Benar", "false": "Salah"} atau variasi lainnya.
 
-Aturan Tipe 'Pilihan Ganda Kompleks (B/S)':
-- correctAnswer harus berupa array boolean [true, false, ...].
-- tfLabels wajib ada.
+### ATURAN KHUSUS TIPE "Pilihan Ganda Kompleks (B/S)" ###
+- "options": Array berisi daftar pernyataan yang harus dievaluasi (minimal 3, maksimal 5).
+- "correctAnswer": Array boolean [true, false, ...] yang urutannya sesuai dengan "options".
+- "tfLabels": Objek wajib berisi {"true": "...", "false": "..."}.
+  - Gunakan "true": "Benar", "false": "Salah" (untuk pernyataan fakta).
+  - Gunakan "true": "Sesuai", "false": "Tidak Sesuai" (untuk analisis stimulus).
+  - Gunakan "true": "Fakta", "false": "Opini" (untuk soal literasi).
+
+Contoh JSON Valid untuk Kompleks B/S:
+{
+  "text": "Berdasarkan stimulus di atas, tentukan kesesuaian pernyataan berikut!",
+  "type": "Pilihan Ganda Kompleks (B/S)",
+  "options": ["Suhu meningkat pada pukul 12:00", "Suhu terendah terjadi di malam hari"],
+  "correctAnswer": [true, false],
+  "tfLabels": {"true": "Sesuai", "false": "Tidak Sesuai"},
+  "explanation": "Penjelasan detail mengapa pernyataan tersebut sesuai atau tidak."
+}
 `;
 
 const SINGLE_QUESTION_SCHEMA = {
@@ -28,13 +42,17 @@ const SINGLE_QUESTION_SCHEMA = {
     text: { type: Type.STRING },
     explanation: { type: Type.STRING },
     options: { type: Type.ARRAY, items: { type: Type.STRING } },
-    correctAnswer: { type: Type.STRING, description: "Bisa berupa angka, array angka, atau array boolean stringified" },
+    correctAnswer: { 
+      type: Type.STRING, 
+      description: "Untuk PG: indeks (0-n). Untuk Jamak: array indeks [0,1]. Untuk B/S: array boolean stringified [true, false]." 
+    },
     tfLabels: {
       type: Type.OBJECT,
       properties: {
         true: { type: Type.STRING },
         false: { type: Type.STRING }
-      }
+      },
+      required: ["true", "false"]
     }
   },
   required: ["type", "level", "text", "options", "correctAnswer", "explanation"]
@@ -62,7 +80,8 @@ export const generateEduCBTQuestions = async (config: GenerationConfig): Promise
 
   const prompt = `Buat ${totalQuestionsCount} soal ${config.subject} (${config.phase}). 
   Materi: ${config.material}. Komposisi: ${typeRequirements} & ${levelRequirements}. Token: ${config.quizToken}.
-  ${config.referenceText ? `Referensi: ${config.referenceText.substring(0, 3000)}` : ''}`;
+  ${config.referenceText ? `Referensi: ${config.referenceText.substring(0, 3000)}` : ''}
+  ${config.specialInstructions ? `Instruksi Tambahan: ${config.specialInstructions}` : ''}`;
 
   try {
     const response = await ai.models.generateContent({
@@ -95,9 +114,9 @@ export const changeQuestionType = async (oldQuestion: EduCBTQuestion, newType: Q
   1. Pertahankan teks soal asli semaksimal mungkin.
   2. Rancang ulang "options" dan "correctAnswer" agar sesuai dengan format ${newType}.
   3. Jika format baru adalah Pilihan Jamak/MCMA, buat minimal 2 jawaban benar.
-  4. Jika format baru adalah Pilihan Ganda Kompleks (B/S), buat minimal 3 pernyataan di options, correctAnswer berupa array boolean, dan sertakan tfLabels.
+  4. Jika format baru adalah Pilihan Ganda Kompleks (B/S), buat minimal 3 pernyataan di options, correctAnswer berupa array boolean, dan sertakan tfLabels (Benar/Salah, Sesuai/Tidak Sesuai, atau Fakta/Opini).
   5. Jika format baru adalah Isian/Uraian, kosongkan "options" dan berikan kunci jawaban yang sesuai di "correctAnswer".
-  6. Perbarui "explanation" (pembahasan) agar relevan dengan kunci jawaban baru.`;
+  6. Perbarui "explanation" agar relevan dengan kunci jawaban baru.`;
 
   try {
     const response = await ai.models.generateContent({
@@ -173,7 +192,6 @@ export const regenerateSingleQuestion = async (oldQuestion: EduCBTQuestion, cust
 const normalizeQuestion = (q: any, config: any): EduCBTQuestion => {
   let correctedAnswer = q.correctAnswer;
   
-  // Handle stringified array or boolean string
   if (typeof correctedAnswer === 'string') {
     if (correctedAnswer.startsWith('[') || correctedAnswer.startsWith('{')) {
       try { correctedAnswer = JSON.parse(correctedAnswer); } catch(e) {}
@@ -184,12 +202,10 @@ const normalizeQuestion = (q: any, config: any): EduCBTQuestion => {
     }
   }
 
-  // Basic normalization logic
   if (q.type === QuestionType.PilihanGanda && typeof correctedAnswer !== 'number') {
     correctedAnswer = parseInt(correctedAnswer) || 0;
   }
 
-  // Handle B/S type normalization
   if (q.type === QuestionType.KompleksBS) {
     if (!Array.isArray(correctedAnswer)) {
       correctedAnswer = q.options.map(() => false);
