@@ -120,6 +120,7 @@ export const changeQuestionType = async (oldQuestion: EduCBTQuestion, newType: Q
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   const prompt = `TUGAS: UBAH TIPE SOAL INI.
+  TOKEN HARUS TETAP: ${oldQuestion.quizToken}
   TEKS SOAL ASLI: "${oldQuestion.text}"
   TIPE ASLI: ${oldQuestion.type}
   TIPE BARU YANG DIMINTA: ${newType}
@@ -127,8 +128,8 @@ export const changeQuestionType = async (oldQuestion: EduCBTQuestion, newType: Q
   INSTRUKSI:
   1. Pertahankan teks soal asli semaksimal mungkin.
   2. Rancang ulang "options" dan "correctAnswer" agar sesuai dengan format ${newType}.
-  3. Jika format baru adalah Pilihan Ganda Kompleks (B/S), buat minimal 3 pernyataan di options, correctAnswer berupa array boolean, dan sertakan tfLabels sesuai konteks (Benar/Salah, Sesuai/Tidak, dsb).
-  4. Perbarui "explanation" agar relevan dengan kunci jawaban baru.`;
+  3. Jika format baru adalah Pilihan Ganda Kompleks (B/S), buat minimal 3 pernyataan di options, correctAnswer berupa array boolean, dan sertakan tfLabels sesuai konteks.
+  4. Gunakan "quizToken": "${oldQuestion.quizToken}" dalam output JSON.`;
 
   try {
     const response = await ai.models.generateContent({
@@ -142,13 +143,11 @@ export const changeQuestionType = async (oldQuestion: EduCBTQuestion, newType: Q
     });
 
     const parsed = JSON.parse(response.text || "{}");
-    // PAKSA quizToken tidak berubah dari soal aslinya
-    return normalizeQuestion({ 
+    const normalized = normalizeQuestion({ 
       ...parsed, 
       id: oldQuestion.id, 
       order: oldQuestion.order,
-      type: newType,
-      quizToken: oldQuestion.quizToken // override dari soal asli
+      type: newType 
     }, {
       subject: oldQuestion.subject,
       phase: oldQuestion.phase,
@@ -157,6 +156,9 @@ export const changeQuestionType = async (oldQuestion: EduCBTQuestion, newType: Q
       typeCounts: {},
       levelCounts: {}
     });
+
+    // FORCE LOCK TOKEN: Pastikan token tidak berubah dari aslinya
+    return { ...normalized, quizToken: oldQuestion.quizToken };
   } catch (error) {
     console.error("Type Change Error:", error);
     throw error;
@@ -167,15 +169,16 @@ export const regenerateSingleQuestion = async (oldQuestion: EduCBTQuestion, cust
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   const prompt = `Buat 1 soal PENGGANTI yang baru.
+  TOKEN HARUS TETAP: ${oldQuestion.quizToken}
   KONTEKS AWAL:
   - Materi: ${oldQuestion.material}
   - Tipe: ${oldQuestion.type}
   - Level: ${oldQuestion.level}
   - Mapel: ${oldQuestion.subject} (${oldQuestion.phase})
 
-  ${customInstructions ? `INSTRUKSI PERBAIKAN KHUSUS DARI PENGGUNA: "${customInstructions}"` : 'Buat soal baru yang lebih berkualitas dan menantang (HOTS) dibandingkan soal sebelumnya.'}
+  ${customInstructions ? `INSTRUKSI PERBAIKAN KHUSUS: "${customInstructions}"` : 'Buat soal baru yang lebih berkualitas.'}
   
-  Pastikan tetap dalam format JSON yang valid.`;
+  PENTING: Gunakan "quizToken": "${oldQuestion.quizToken}" dalam output JSON.`;
 
   try {
     const response = await ai.models.generateContent({
@@ -189,13 +192,7 @@ export const regenerateSingleQuestion = async (oldQuestion: EduCBTQuestion, cust
     });
 
     const parsed = JSON.parse(response.text || "{}");
-    // PAKSA quizToken tidak berubah dari soal aslinya
-    return normalizeQuestion({ 
-      ...parsed, 
-      id: oldQuestion.id, 
-      order: oldQuestion.order,
-      quizToken: oldQuestion.quizToken // override dari soal asli
-    }, {
+    const normalized = normalizeQuestion({ ...parsed, id: oldQuestion.id, order: oldQuestion.order }, {
       subject: oldQuestion.subject,
       phase: oldQuestion.phase,
       material: oldQuestion.material,
@@ -203,6 +200,9 @@ export const regenerateSingleQuestion = async (oldQuestion: EduCBTQuestion, cust
       typeCounts: {},
       levelCounts: {}
     });
+
+    // FORCE LOCK TOKEN: Pastikan token tidak berubah dari aslinya
+    return { ...normalized, quizToken: oldQuestion.quizToken };
   } catch (error) {
     console.error("Regeneration error:", error);
     throw error;
@@ -212,14 +212,12 @@ export const regenerateSingleQuestion = async (oldQuestion: EduCBTQuestion, cust
 const normalizeQuestion = (q: any, config: any): EduCBTQuestion => {
   let correctedAnswer = q.correctAnswer;
   
-  // Handle stringified array or boolean string
   if (typeof correctedAnswer === 'string') {
     const trimmed = correctedAnswer.trim();
     if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
       try { 
         correctedAnswer = JSON.parse(trimmed); 
       } catch(e) {
-        // Fallback for messy boolean arrays like "[true,false]"
         if (q.type === QuestionType.KompleksBS) {
            correctedAnswer = trimmed.replace(/[\[\]]/g, '').split(',').map(s => s.trim().toLowerCase() === 'true');
         }
@@ -233,7 +231,6 @@ const normalizeQuestion = (q: any, config: any): EduCBTQuestion => {
     }
   }
 
-  // Final validation based on Type
   if (q.type === QuestionType.PilihanGanda && typeof correctedAnswer !== 'number') {
     correctedAnswer = Array.isArray(correctedAnswer) ? (correctedAnswer[0] ?? 0) : parseInt(correctedAnswer as any) || 0;
   }
@@ -242,7 +239,6 @@ const normalizeQuestion = (q: any, config: any): EduCBTQuestion => {
     if (!Array.isArray(correctedAnswer)) {
       correctedAnswer = q.options?.map(() => false) || [];
     }
-    // Ensure it's boolean array
     correctedAnswer = (correctedAnswer as any[]).map(val => val === true || val === "true");
     
     if (!q.tfLabels) {
@@ -254,6 +250,8 @@ const normalizeQuestion = (q: any, config: any): EduCBTQuestion => {
     correctedAnswer = [parseInt(correctedAnswer as any) || 0];
   }
 
+  const finalQuizToken = (q.quizToken || config.quizToken || "").toString().toUpperCase();
+
   return {
     ...q,
     id: q.id || `q_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -261,7 +259,7 @@ const normalizeQuestion = (q: any, config: any): EduCBTQuestion => {
     correctAnswer: correctedAnswer,
     subject: q.subject || config.subject,
     phase: q.phase || config.phase,
-    quizToken: (q.quizToken || config.quizToken || "").toUpperCase(),
+    quizToken: finalQuizToken,
     material: q.material || config.material,
     isDeleted: false,
     createdAt: q.createdAt || Date.now(),
