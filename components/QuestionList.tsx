@@ -67,9 +67,11 @@ const QuestionList: React.FC<Props> = ({
                   <span className="text-[10px] font-black text-slate-400">#</span>
                   <input 
                     type="number"
-                    className="w-12 px-1.5 py-1 bg-white border border-slate-200 rounded text-xs font-black text-indigo-600 outline-none focus:ring-2 focus:ring-indigo-100 transition-all"
-                    value={q.order || 0}
-                    onChange={(e) => onQuickUpdate && onQuickUpdate(q.id, 'order', parseInt(e.target.value) || 0)}
+                    className="w-14 px-2 py-1 bg-white border border-slate-200 rounded text-xs font-black text-indigo-600 outline-none focus:ring-2 focus:ring-indigo-400 transition-all text-center"
+                    value={q.order === undefined || q.order === null ? "" : q.order}
+                    placeholder="No"
+                    onChange={(e) => onQuickUpdate && onQuickUpdate(q.id, 'order', e.target.value)}
+                    onFocus={(e) => e.target.select()}
                   />
                 </div>
                 
@@ -78,7 +80,7 @@ const QuestionList: React.FC<Props> = ({
                   <span className="text-[10px] font-black text-slate-400">TOKEN:</span>
                   <input 
                     type="text"
-                    className="w-24 px-1.5 py-1 bg-white border border-slate-200 rounded text-[10px] font-mono font-bold text-slate-600 outline-none focus:ring-2 focus:ring-indigo-100 transition-all"
+                    className="w-28 px-2 py-1 bg-white border border-slate-200 rounded text-[10px] font-mono font-bold text-slate-600 outline-none focus:ring-2 focus:ring-indigo-400 transition-all uppercase"
                     value={q.quizToken || ''}
                     placeholder="ID Paket"
                     onChange={(e) => onQuickUpdate && onQuickUpdate(q.id, 'quizToken', e.target.value)}

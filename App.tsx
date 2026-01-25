@@ -20,7 +20,11 @@ const App: React.FC = () => {
 
   // Mengurutkan soal berdasarkan properti 'order' secara otomatis
   const sortedQuestions = useMemo(() => {
-    return [...questions].sort((a, b) => (a.order || 0) - (b.order || 0));
+    return [...questions].sort((a, b) => {
+      const orderA = typeof a.order === 'number' ? a.order : parseInt(a.order as any) || 0;
+      const orderB = typeof b.order === 'number' ? b.order : parseInt(b.order as any) || 0;
+      return orderA - orderB;
+    });
   }, [questions]);
 
   const activeQuestions = useMemo(() => 
@@ -38,7 +42,6 @@ const App: React.FC = () => {
     setError(null);
     try {
       const result = await generateEduCBTQuestions(config);
-      // Menentukan order awal untuk soal baru agar melanjutkan yang sudah ada
       const lastOrder = questions.length > 0 ? Math.max(...questions.map(q => q.order || 0)) : 0;
       const resultWithOrder = result.map((q, i) => ({ ...q, order: lastOrder + i + 1 }));
       
@@ -57,7 +60,6 @@ const App: React.FC = () => {
         id: q.id || `imported_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         isDeleted: q.isDeleted ?? false,
         isRegenerating: false,
-        // Jika tidak ada order, beri nomor urut otomatis di akhir
         order: q.order || (prev.length + i + 1)
       }));
       return [...prev, ...sanitized];
@@ -86,10 +88,16 @@ const App: React.FC = () => {
   };
 
   // Fungsi khusus untuk update cepat (Order & Token)
-  const handleQuickUpdate = (id: string, field: 'order' | 'quizToken', value: string | number) => {
+  const handleQuickUpdate = (id: string, field: 'order' | 'quizToken', value: any) => {
     setQuestions(prev => prev.map(q => {
       if (q.id === id) {
-        return { ...q, [field]: value };
+        // Jika field adalah order, pastikan disimpan sebagai angka jika memungkinkan
+        let finalValue = value;
+        if (field === 'order' && value !== "") {
+          finalValue = parseInt(value);
+          if (isNaN(finalValue)) finalValue = q.order;
+        }
+        return { ...q, [field]: finalValue };
       }
       return q;
     }));
