@@ -142,11 +142,13 @@ export const changeQuestionType = async (oldQuestion: EduCBTQuestion, newType: Q
     });
 
     const parsed = JSON.parse(response.text || "{}");
+    // PAKSA quizToken tidak berubah dari soal aslinya
     return normalizeQuestion({ 
       ...parsed, 
       id: oldQuestion.id, 
       order: oldQuestion.order,
-      type: newType 
+      type: newType,
+      quizToken: oldQuestion.quizToken // override dari soal asli
     }, {
       subject: oldQuestion.subject,
       phase: oldQuestion.phase,
@@ -187,7 +189,13 @@ export const regenerateSingleQuestion = async (oldQuestion: EduCBTQuestion, cust
     });
 
     const parsed = JSON.parse(response.text || "{}");
-    return normalizeQuestion({ ...parsed, id: oldQuestion.id, order: oldQuestion.order }, {
+    // PAKSA quizToken tidak berubah dari soal aslinya
+    return normalizeQuestion({ 
+      ...parsed, 
+      id: oldQuestion.id, 
+      order: oldQuestion.order,
+      quizToken: oldQuestion.quizToken // override dari soal asli
+    }, {
       subject: oldQuestion.subject,
       phase: oldQuestion.phase,
       material: oldQuestion.material,
