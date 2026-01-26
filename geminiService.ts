@@ -58,7 +58,7 @@ const SINGLE_QUESTION_SCHEMA = {
     level: { type: Type.STRING },
     text: { 
       type: Type.STRING,
-      description: "Teks soal dalam format PLAIN TEXT. Tanpa tag HTML seperti <p> atau <br>."
+      description: "Teks soal dalam format PLAIN TEXT. Tanpa tag HTML."
     },
     explanation: { 
       type: Type.STRING,
@@ -89,6 +89,32 @@ const QUESTIONS_ARRAY_SCHEMA = {
   items: SINGLE_QUESTION_SCHEMA
 };
 
+/**
+ * Utility function to handle API calls with exponential backoff for 429/500 errors
+ */
+async function callGeminiWithRetry(fn: () => Promise<any>, maxRetries = 3): Promise<any> {
+  let lastError: any;
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      return await fn();
+    } catch (error: any) {
+      lastError = error;
+      const errorMessage = error?.message || "";
+      const isQuotaError = errorMessage.toLowerCase().includes("quota") || errorMessage.includes("429");
+      const isServerError = errorMessage.includes("500") || errorMessage.includes("503");
+
+      if (isQuotaError || isServerError) {
+        const waitTime = Math.pow(2, i) * 2000; // 2s, 4s, 8s
+        console.warn(`Gemini API Quota/Server error. Retrying in ${waitTime}ms... (Attempt ${i + 1}/${maxRetries})`);
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw lastError;
+}
+
 export const generateEduCBTQuestions = async (config: GenerationConfig): Promise<EduCBTQuestion[]> => {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
@@ -111,7 +137,7 @@ export const generateEduCBTQuestions = async (config: GenerationConfig): Promise
   INGAT: Output 'text' dan 'explanation' harus PLAIN TEXT murni, dilarang ada tag HTML <p>, <br>, dll.`;
 
   try {
-    const response = await ai.models.generateContent({
+    const response = await callGeminiWithRetry(() => ai.models.generateContent({
       model: 'gemini-3-pro-preview',
       contents: prompt,
       config: {
@@ -119,12 +145,14 @@ export const generateEduCBTQuestions = async (config: GenerationConfig): Promise
         responseMimeType: "application/json",
         responseSchema: QUESTIONS_ARRAY_SCHEMA
       }
-    });
+    }));
 
     const parsed = JSON.parse(response.text || "[]");
     return parsed.map((q: any) => normalizeQuestion(q, config));
-  } catch (error) {
-    console.error("Generation error:", error);
+  } catch (error: any) {
+    if (error?.message?.includes("quota")) {
+      throw new Error("Batas penggunaan (Quota) tercapai. Silakan tunggu 1 menit lalu coba lagi.");
+    }
     throw error;
   }
 };
@@ -139,14 +167,12 @@ export const changeQuestionType = async (oldQuestion: EduCBTQuestion, newType: Q
   TIPE BARU YANG DIMINTA: ${newType}
   
   INSTRUKSI:
-  1. Pertahankan teks soal asli semaksimal mungkin dalam format PLAIN TEXT (Tanpa HTML).
+  1. Pertahankan teks soal asli semaksimal mungkin dalam format PLAIN TEXT.
   2. Rancang ulang "options" dan "correctAnswer" agar sesuai dengan format ${newType}.
-  3. Jika format baru adalah Pilihan Ganda Kompleks (B/S), buat minimal 3 pernyataan di options, correctAnswer berupa array boolean, dan sertakan tfLabels sesuai konteks.
-  4. Perbarui "explanation" dalam PLAIN TEXT agar relevan dengan kunci jawaban baru.
-  5. Gunakan "quizToken": "${oldQuestion.quizToken}" dalam output JSON.`;
+  3. Gunakan "quizToken": "${oldQuestion.quizToken}" dalam output JSON.`;
 
   try {
-    const response = await ai.models.generateContent({
+    const response = await callGeminiWithRetry(() => ai.models.generateContent({
       model: 'gemini-3-pro-preview',
       contents: prompt,
       config: {
@@ -154,7 +180,7 @@ export const changeQuestionType = async (oldQuestion: EduCBTQuestion, newType: Q
         responseMimeType: "application/json",
         responseSchema: SINGLE_QUESTION_SCHEMA
       }
-    });
+    }));
 
     const parsed = JSON.parse(response.text || "{}");
     const normalized = normalizeQuestion({ 
@@ -181,7 +207,7 @@ export const changeQuestionType = async (oldQuestion: EduCBTQuestion, newType: Q
 export const regenerateSingleQuestion = async (oldQuestion: EduCBTQuestion, customInstructions?: string): Promise<EduCBTQuestion> => {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
-  const prompt = `Buat 1 soal PENGGANTI yang baru dalam format PLAIN TEXT (Tanpa HTML).
+  const prompt = `Buat 1 soal PENGGANTI yang baru dalam format PLAIN TEXT.
   TOKEN HARUS TETAP: ${oldQuestion.quizToken}
   KONTEKS AWAL:
   - Materi: ${oldQuestion.material}
@@ -191,10 +217,10 @@ export const regenerateSingleQuestion = async (oldQuestion: EduCBTQuestion, cust
 
   ${customInstructions ? `INSTRUKSI PERBAIKAN KHUSUS: "${customInstructions}"` : 'Buat soal baru yang lebih berkualitas.'}
   
-  PENTING: Gunakan "quizToken": "${oldQuestion.quizToken}" dalam output JSON. JANGAN GUNAKAN TAG HTML.`;
+  PENTING: Gunakan "quizToken": "${oldQuestion.quizToken}" dalam output JSON.`;
 
   try {
-    const response = await ai.models.generateContent({
+    const response = await callGeminiWithRetry(() => ai.models.generateContent({
       model: 'gemini-3-pro-preview',
       contents: prompt,
       config: {
@@ -202,7 +228,7 @@ export const regenerateSingleQuestion = async (oldQuestion: EduCBTQuestion, cust
         responseMimeType: "application/json",
         responseSchema: SINGLE_QUESTION_SCHEMA
       }
-    });
+    }));
 
     const parsed = JSON.parse(response.text || "{}");
     const normalized = normalizeQuestion({ ...parsed, id: oldQuestion.id, order: oldQuestion.order }, {
@@ -264,7 +290,6 @@ const normalizeQuestion = (q: any, config: any): EduCBTQuestion => {
 
   const finalQuizToken = (q.quizToken || config.quizToken || "").toString().toUpperCase();
 
-  // Clean HTML from text if AI still produces it (Double Safety)
   const cleanHtml = (str: string) => {
     return str.replace(/<[^>]*>?/gm, '');
   };
@@ -288,10 +313,10 @@ const normalizeQuestion = (q: any, config: any): EduCBTQuestion => {
 export const generateImage = async (prompt: string): Promise<string> => {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   try {
-    const response = await ai.models.generateContent({
+    const response = await callGeminiWithRetry(() => ai.models.generateContent({
       model: 'gemini-2.5-flash-image',
       contents: { parts: [{ text: `High quality educational vector illustration: ${prompt}` }] }
-    });
+    }));
     const imgPart = response.candidates?.[0]?.content?.parts.find(p => p.inlineData);
     return imgPart?.inlineData ? `data:image/png;base64,${imgPart.inlineData.data}` : "";
   } catch (error) { return ""; }
