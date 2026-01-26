@@ -21,22 +21,58 @@ export const downloadExcelTemplate = () => {
   
   const sampleData = [
     [
-      1, "Pilihan Ganda", "L1", "Ekosistem", "Perhatikan gambar hewan di samping. Apa perannya?", "https://images.unsplash.com/photo-1546182990-dffeafbe841d?w=200", 
+      1, "Pilihan Ganda", "L1", "Ekosistem", "Apa peran utama tumbuhan hijau dalam ekosistem?", "", 
       "Produsen", "", 
       "Konsumen I", "", 
       "Pengurai", "", 
-      "Predator", "", 
+      "Detritivor", "", 
       "", "", 
-      "B", "Singa adalah konsumen puncak", "IPA-01"
+      "A", "Tumbuhan menghasilkan makanan sendiri melalui fotosintesis.", "IPA-01"
     ],
     [
-      2, "Pilihan Jamak (MCMA)", "L2", "Geometri", "Mana yang termasuk bangun ruang?", "", 
-      "Kubus", "https://cdn-icons-png.flaticon.com/128/3305/3305544.png", 
-      "Lingkaran", "", 
-      "Balok", "https://cdn-icons-png.flaticon.com/128/3305/3305561.png", 
-      "Segitiga", "", 
+      2, "Pilihan Jamak (MCMA)", "L2", "Zat Kimia", "Manakah yang termasuk gas mulia? (Pilih semua yang benar)", "", 
+      "Helium", "", 
+      "Oksigen", "", 
+      "Neon", "", 
+      "Nitrogen", "", 
+      "Argon", "", 
+      "A, C, E", "Helium, Neon, dan Argon adalah gas mulia golongan VIIIA.", "KIM-01"
+    ],
+    [
+      3, "Pilihan Ganda Kompleks", "L3", "Sejarah", "Pernyataan berikut yang benar mengenai Proklamasi adalah...", "", 
+      "Dibaca di Jl. Pegangsaan Timur", "", 
+      "Disusun oleh Soekarno-Hatta-Subardjo", "", 
+      "Terjadi pada sore hari", "", 
+      "Dihadiri oleh tentara Jepang secara resmi", "", 
       "", "", 
-      "A, C", "Kubus dan Balok punya volume", "MAT-01"
+      "A, B", "Proklamasi dilakukan pagi hari dan tidak dihadiri resmi oleh Jepang.", "SEJ-01"
+    ],
+    [
+      4, "Pilihan Ganda Kompleks (B/S)", "L2", "Astronomi", "Tentukan Benar (B) atau Salah (S) untuk pernyataan berikut:\n1. Matahari adalah bintang\n2. Bulan memancarkan cahaya sendiri\n3. Pluto adalah planet terkecil saat ini", "", 
+      "Matahari adalah bintang", "", 
+      "Bulan memancarkan cahaya sendiri", "", 
+      "Pluto bukan planet utama", "", 
+      "", "", 
+      "", "", 
+      "B, S, B", "Matahari bintang (B), Bulan pantulan (S), Pluto planet kerdil (B).", "AST-01"
+    ],
+    [
+      5, "ISIAN", "L1", "Geografi", "Apa nama ibu kota negara Indonesia saat ini?", "", 
+      "", "", 
+      "", "", 
+      "", "", 
+      "", "", 
+      "", "", 
+      "Jakarta", "Ibu kota Indonesia saat ini adalah Jakarta.", "GEO-01"
+    ],
+    [
+      6, "URAIAN", "L3", "Ekonomi", "Jelaskan dampak inflasi terhadap daya beli masyarakat!", "", 
+      "", "", 
+      "", "", 
+      "", "", 
+      "", "", 
+      "", "", 
+      "Inflasi menyebabkan harga barang naik, sehingga jumlah barang yang bisa dibeli dengan jumlah uang yang sama menjadi berkurang.", "Inflasi menurunkan nilai riil mata uang.", "EKO-01"
     ]
   ];
   
@@ -48,21 +84,25 @@ export const downloadExcelTemplate = () => {
     ["PANDUAN PENGISIAN TEMPLATE SOAL EDUCBT PRO"],
     [""],
     ["KOLOM", "INSTRUKSI PENGISIAN"],
-    ["Tipe Soal", "Wajib: 'Pilihan Ganda', 'Pilihan Jamak (MCMA)', 'Pilihan Ganda Kompleks', 'Pilihan Ganda Kompleks (B/S)', 'ISIAN', atau 'URAIAN'"],
-    ["Gambar Soal (URL)", "Masukkan link/URL gambar langsung (akhiran .jpg, .png, .webp). Gambar akan otomatis muncul di soal."],
-    ["Gambar Opsi (URL)", "Sama seperti Gambar Soal, tapi untuk diletakkan di bawah teks pilihan jawaban."],
-    ["Kunci Jawaban", "FORMAT HARUS TEPAT:"],
-    ["- Pilihan Ganda", "Gunakan huruf: A / B / C / D / E"],
-    ["- Pilihan Jamak", "Gunakan huruf dipisah koma: A, C"],
-    ["- Kompleks (B/S)", "Gunakan B atau S dipisah koma sesuai jumlah pernyataan: B, S, B"],
+    ["Tipe Soal", "Wajib isi: 'Pilihan Ganda', 'Pilihan Jamak (MCMA)', 'Pilihan Ganda Kompleks', 'Pilihan Ganda Kompleks (B/S)', 'ISIAN', atau 'URAIAN'"],
+    ["Level", "Wajib isi: 'L1', 'L2', atau 'L3'"],
+    ["Teks Soal", "Gunakan '\\n' untuk baris baru (Alt+Enter di Excel juga diperbolehkan)."],
+    ["Gambar Soal (URL)", "Masukkan link/URL gambar langsung (akhiran .jpg, .png, .webp)."],
     [""],
-    ["TIPS GAMBAR", "Gunakan link dari hosting gambar publik agar gambar tidak error saat diakses sistem lain."],
-    ["PENTING", "Jangan menghapus atau mengubah urutan header (Baris 1)."]
+    ["FORMAT KUNCI JAWABAN (SANGAT PENTING):"],
+    ["1. Pilihan Ganda", "Gunakan satu huruf: A / B / C / D / E"],
+    ["2. Pilihan Jamak / Kompleks", "Gunakan huruf dipisah koma: A, C, E"],
+    ["3. Kompleks (B/S)", "Gunakan B atau S sesuai jumlah opsi pernyataan: B, S, B"],
+    ["4. ISIAN", "Tuliskan jawaban singkat yang benar."],
+    ["5. URAIAN", "Tuliskan poin-poin kunci jawaban atau penjelasan lengkap."],
+    [""],
+    ["TIPS", "Jangan menghapus Baris 1 (Header). Isian dan Uraian tidak memerlukan pengisian kolom Opsi."],
+    ["PENTING", "Pastikan tidak ada baris kosong di tengah-tengah data soal."]
   ];
   const wsGuide = XLSX.utils.aoa_to_sheet(guide);
   XLSX.utils.book_append_sheet(wb, wsGuide, "Panduan");
 
-  XLSX.writeFile(wb, "Template_Soal_EduCBT_Pro.xlsx");
+  XLSX.writeFile(wb, "Template_Soal_EduCBT_Pro_Lengkap.xlsx");
 };
 
 const getSoalHtml = (questions: EduCBTQuestion[]) => {
@@ -115,7 +155,7 @@ const getSoalHtml = (questions: EduCBTQuestion[]) => {
                     <tbody>
                       ${q.options.map((opt, i) => `
                         <tr>
-                          <td style="border: 1px solid black; padding: 5px; text-align: center;">${i+1}</td>
+                          <td style="border: 1px solid black; padding: 5px; text-align: center;">${i + 1}</td>
                           <td style="border: 1px solid black; padding: 5px;">${opt}</td>
                           <td style="border: 1px solid black; padding: 5px; text-align: center;"></td>
                           <td style="border: 1px solid black; padding: 5px; text-align: center;"></td>
@@ -123,6 +163,10 @@ const getSoalHtml = (questions: EduCBTQuestion[]) => {
                       `).join('')}
                     </tbody>
                   </table>
+                ` : q.type === QuestionType.Isian || q.type === QuestionType.Uraian ? `
+                  <div style="border: 1px solid #ccc; padding: 10px; min-height: 80px; margin-top: 10px; border-radius: 4px;">
+                    <span style="color: #999; font-size: 10pt;">Jawaban: ....................................................................................................................................</span>
+                  </div>
                 ` : `
                   ${(q.options || []).map((opt, oIdx) => `
                     <div style="margin-bottom: 10px; display: flex; gap: 12px; align-items: flex-start;">
@@ -167,6 +211,9 @@ const getSoalHtml = (questions: EduCBTQuestion[]) => {
                     return null;
                   }).filter(v => v !== null).join(', ');
                 }
+              } else {
+                // Fix: Use String() constructor to safely handle cases where correctAnswer might be string, boolean, or inferred as never by TS
+                key = String(q.correctAnswer ?? '-');
               }
               return `
                 <tr>

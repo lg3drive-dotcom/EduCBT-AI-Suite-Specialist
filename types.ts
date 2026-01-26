@@ -18,7 +18,8 @@ export type EduCBTQuestion = {
   text: string;
   explanation: string;
   options: string[];
-  correctAnswer: number | number[] | boolean[];
+  // Fix: Added string and boolean to allow for Isian/Uraian and single boolean answers
+  correctAnswer: string | number | boolean | number[] | boolean[];
   tfLabels?: {
     true: string;
     false: string;
