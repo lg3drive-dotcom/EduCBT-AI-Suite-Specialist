@@ -46,21 +46,20 @@ const GenerationForm: React.FC<Props> = ({ onGenerate, onImportJson, isLoading }
 
   const parseExcelQuestions = (data: any[]): EduCBTQuestion[] => {
     return data.map((row, i) => {
-      const tipe = (row["Tipe Soal"] || row["Tipe"] || row["tipe"] || "Pilihan Ganda").toString();
-      const level = (row["Level"] || row["level"] || "L1").toString();
-      const teks = (row["Teks Soal"] || row["Soal"] || row["soal"] || "").toString();
+      // Header detection dengan variasi nama
+      const tipeRaw = row["Tipe Soal"] || row["Tipe"] || row["tipe"] || "";
+      const level = (row["Level"] || row["level"] || "L1").toString().toUpperCase();
+      const teks = (row["Teks Soal"] || row["Soal"] || row["Pertanyaan"] || row["soal"] || "").toString();
       const material = (row["Materi"] || row["materi"] || "").toString();
-      const explanation = (row["Pembahasan"] || row["penjelasan"] || "").toString();
+      const explanation = (row["Pembahasan"] || row["Penjelasan"] || row["penjelasan"] || "").toString();
       const token = (row["Token Paket"] || row["Token"] || row["token"] || "").toString();
       
-      // Link Gambar Soal
       const mainImage = (row["Gambar Soal (URL)"] || row["Gambar Soal"] || "").toString();
 
       const options = [
         row["Opsi A"], row["Opsi B"], row["Opsi C"], row["Opsi D"], row["Opsi E"]
       ].filter(o => o !== undefined && o !== null && o !== "").map(o => o.toString());
 
-      // Link Gambar Opsi
       const optionImages = [
         row["Gambar Opsi A (URL)"] || row["Gambar Opsi A"] || null,
         row["Gambar Opsi B (URL)"] || row["Gambar Opsi B"] || null,
@@ -70,11 +69,22 @@ const GenerationForm: React.FC<Props> = ({ onGenerate, onImportJson, isLoading }
       ].map(o => o ? o.toString() : null);
 
       let kunci = (row["Kunci Jawaban"] || row["Kunci"] || row["kunci"] || "").toString();
+      let tipe = tipeRaw.toString();
+
+      // Autodetect Tipe jika kosong berdasarkan kunci
+      if (!tipe) {
+        if (kunci.includes(',') || kunci.includes(';')) {
+          tipe = (kunci.includes('B') || kunci.includes('S')) ? QuestionType.KompleksBS : QuestionType.MCMA;
+        } else {
+          tipe = QuestionType.PilihanGanda;
+        }
+      }
+
       let correctAnswer: any = 0;
 
       // Normalisasi Kunci Jawaban
       if (tipe === QuestionType.PilihanGanda) {
-        correctAnswer = (kunci.toUpperCase().charCodeAt(0) - 65); // A=0, B=1, dst
+        correctAnswer = (kunci.toUpperCase().trim().charCodeAt(0) - 65);
         if (isNaN(correctAnswer) || correctAnswer < 0) correctAnswer = 0;
       } else if (tipe === QuestionType.MCMA) {
         correctAnswer = kunci.split(/[,;|]/).map(k => k.trim().toUpperCase().charCodeAt(0) - 65).filter(n => !isNaN(n) && n >= 0);
@@ -93,8 +103,8 @@ const GenerationForm: React.FC<Props> = ({ onGenerate, onImportJson, isLoading }
         level: level,
         subject: formData.subject,
         phase: formData.phase,
-        material: material,
-        text: teks,
+        material: material || "Materi Belum Terisi",
+        text: teks || "(Teks soal kosong)",
         explanation: explanation,
         options: options,
         optionImages: optionImages,
@@ -128,7 +138,7 @@ const GenerationForm: React.FC<Props> = ({ onGenerate, onImportJson, isLoading }
         const imported = parseExcelQuestions(data);
         if (imported.length > 0) {
           onImportJson(imported);
-          alert(`${imported.length} soal dari Excel berhasil diimport.`);
+          alert(`${imported.length} soal terbaca. Jika ada kolom kosong, gunakan tombol 'Lengkapi via AI' di daftar soal.`);
         }
       } catch (err) {
         console.error(err);

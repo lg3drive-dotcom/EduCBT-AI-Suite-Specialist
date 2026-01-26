@@ -38,7 +38,7 @@ Setiap response WAJIB berupa ARRAY JSON. Gunakan standar value berikut:
 8. "order": Nomor urut soal (Integer).
 
 ### ATURAN FORMAT TEKS (PENTING!) ###
-- JANGAN GUNAKAN TAG HTML (seperti <p>, <br/>, <strong>, <b>, <i>, dll).
+- JANGAN GUNAKAN TAG HTML (seperti <p>, <br/>, <strong>, <b>, i, dll).
 - Gunakan TEKS BIASA (Plain Text). 
 - Untuk pemformatan baris baru, gunakan karakter newline (\n) standar.
 
@@ -79,20 +79,14 @@ const QUESTIONS_ARRAY_SCHEMA = {
   items: SINGLE_QUESTION_SCHEMA
 };
 
-/**
- * Enhanced API Caller with Fallback and Retry for Text-based generation
- */
 async function smartGeminiCall(payload: any, maxRetries = 3) {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   let lastError: any;
-  
-  // Model priorities for standard text tasks
   const models = ['gemini-3-pro-preview', 'gemini-3-flash-preview'];
 
   for (const modelName of models) {
     for (let i = 0; i < maxRetries; i++) {
       try {
-        console.log(`Calling ${modelName}... (Attempt ${i + 1})`);
         const response = await ai.models.generateContent({
           ...payload,
           model: modelName
@@ -101,24 +95,15 @@ async function smartGeminiCall(payload: any, maxRetries = 3) {
       } catch (error: any) {
         lastError = error;
         const msg = (error?.message || "").toLowerCase();
-        
-        // If it's a quota error (429) or overloaded (503/429)
-        if (msg.includes("quota") || msg.includes("429") || msg.includes("overloaded") || msg.includes("limit")) {
-          const wait = Math.pow(2, i) * 3000;
-          console.warn(`Quota hit on ${modelName}. Waiting ${wait}ms...`);
-          await new Promise(r => setTimeout(r, wait));
-          continue; // Try next retry for the SAME model
+        if (msg.includes("quota") || msg.includes("429") || msg.includes("overloaded")) {
+          await new Promise(r => setTimeout(r, Math.pow(2, i) * 2000));
+          continue;
         }
-        
-        // If it's another error, stop retrying this model
         break;
       }
     }
-    // If we reach here, the current model failed all retries, move to next model (Flash)
-    console.warn(`${modelName} failed after all retries. Switching to fallback...`);
   }
-
-  throw lastError || new Error("Semua model Gemini sedang sibuk atau mencapai batas kuota.");
+  throw lastError || new Error("API Busy");
 }
 
 export const generateEduCBTQuestions = async (config: GenerationConfig): Promise<EduCBTQuestion[]> => {
@@ -152,7 +137,56 @@ export const generateEduCBTQuestions = async (config: GenerationConfig): Promise
     const parsed = JSON.parse(response.text || "[]");
     return parsed.map((q: any) => normalizeQuestion(q, config));
   } catch (error: any) {
-    throw new Error("Gagal memproses permintaan. Server Gemini sedang sangat sibuk (Quota Exceeded). Silakan coba lagi dalam 1-2 menit.");
+    throw new Error("Server Gemini sedang sibuk. Silakan coba lagi.");
+  }
+};
+
+/**
+ * NEW: Repair missing data in questions (Material, Level, Explanation)
+ */
+export const repairQuestions = async (questions: EduCBTQuestion[]): Promise<EduCBTQuestion[]> => {
+  const simplified = questions.map(q => ({
+    id: q.id,
+    type: q.type,
+    text: q.text,
+    options: q.options,
+    material: q.material,
+    level: q.level,
+    explanation: q.explanation
+  }));
+
+  const prompt = `LENGKAPI DATA KOSONG. 
+  Tinjau daftar soal berikut. Jika 'material', 'level', atau 'explanation' kosong atau tidak jelas, silakan isi/perbaiki secara cerdas berdasarkan konteks 'text' dan 'options'. 
+  Pastikan level (L1-L3) akurat sesuai taksonomi Bloom. NO HTML.
+  DATA: ${JSON.stringify(simplified)}`;
+
+  try {
+    const response = await smartGeminiCall({
+      contents: prompt,
+      config: {
+        systemInstruction: SYSTEM_INSTRUCTION,
+        responseMimeType: "application/json",
+        responseSchema: QUESTIONS_ARRAY_SCHEMA
+      }
+    });
+
+    const repairedData = JSON.parse(response.text || "[]");
+    
+    // Merge back
+    return questions.map(original => {
+      const repaired = repairedData.find((r: any) => r.id === original.id);
+      if (repaired) {
+        return {
+          ...original,
+          material: original.material || repaired.material,
+          level: (original.level && original.level !== "L1") ? original.level : (repaired.level || "L1"),
+          explanation: original.explanation || repaired.explanation
+        };
+      }
+      return original;
+    });
+  } catch (err) {
+    throw new Error("Gagal melengkapi data via AI.");
   }
 };
 
@@ -189,7 +223,7 @@ export const changeQuestionType = async (oldQuestion: EduCBTQuestion, newType: Q
 
     return { ...normalized, quizToken: oldQuestion.quizToken };
   } catch (error) {
-    throw new Error("Gagal mengubah tipe soal karena batasan kuota API.");
+    throw new Error("Gagal mengubah tipe soal.");
   }
 };
 
@@ -221,7 +255,7 @@ export const regenerateSingleQuestion = async (oldQuestion: EduCBTQuestion, cust
 
     return { ...normalized, quizToken: oldQuestion.quizToken };
   } catch (error) {
-    throw new Error("Gagal meregenerasi soal karena batasan kuota API.");
+    throw new Error("Gagal meregenerasi soal.");
   }
 };
 
@@ -270,13 +304,9 @@ const normalizeQuestion = (q: any, config: any): EduCBTQuestion => {
   };
 };
 
-/**
- * Generates an educational illustration using the correct multimodal Gemini model
- */
 export const generateImage = async (prompt: string): Promise<string> => {
   try {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    // Use gemini-2.5-flash-image for standard image generation tasks as per instructions
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash-image',
       contents: {
@@ -288,7 +318,6 @@ export const generateImage = async (prompt: string): Promise<string> => {
       },
     });
 
-    // Extract the image data from the response candidates
     if (response.candidates && response.candidates[0].content.parts) {
       for (const part of response.candidates[0].content.parts) {
         if (part.inlineData) {

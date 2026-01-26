@@ -6,29 +6,25 @@ import QuestionList from './components/QuestionList';
 import JsonPreview from './components/JsonPreview';
 import QuestionEditor from './components/QuestionEditor';
 import { EduCBTQuestion, GenerationConfig, QuestionType } from './types';
-import { generateEduCBTQuestions, regenerateSingleQuestion, changeQuestionType } from './geminiService';
+import { generateEduCBTQuestions, regenerateSingleQuestion, changeQuestionType, repairQuestions } from './geminiService';
 import { downloadSoalDoc, downloadKisiKisiDoc, downloadSoalPdf, downloadKisiKisiPdf } from './utils/exportUtils';
 
 const App: React.FC = () => {
   const [questions, setQuestions] = useState<EduCBTQuestion[]>([]);
   const [loading, setLoading] = useState(false);
+  const [repairing, setRepairing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'preview' | 'json'>('preview');
   const [activeTab, setActiveTab] = useState<'active' | 'trash'>('active');
   
   const [editingId, setEditingId] = useState<string | null>(null);
 
-  // LOGIKA BARU: Urutkan berdasarkan quizToken, lalu berdasarkan order
   const sortedQuestions = useMemo(() => {
     return [...questions].sort((a, b) => {
-      // 1. Bandingkan Token Paket (Alfabetis)
       const tokenA = (a.quizToken || "").toString().toLowerCase();
       const tokenB = (b.quizToken || "").toString().toLowerCase();
-      
       if (tokenA < tokenB) return -1;
       if (tokenA > tokenB) return 1;
-      
-      // 2. Jika Token sama, bandingkan Nomor Urut (Numerik)
       const orderA = typeof a.order === 'number' ? a.order : parseInt(a.order as any) || 0;
       const orderB = typeof b.order === 'number' ? b.order : parseInt(b.order as any) || 0;
       return orderA - orderB;
@@ -45,6 +41,28 @@ const App: React.FC = () => {
     [sortedQuestions]
   );
 
+  const hasEmptyFields = useMemo(() => {
+    return activeQuestions.some(q => !q.explanation || q.material === "Materi Belum Terisi" || !q.level);
+  }, [activeQuestions]);
+
+  const handleSmartRepair = async () => {
+    if (activeQuestions.length === 0) return;
+    setRepairing(true);
+    setError(null);
+    try {
+      const repaired = await repairQuestions(activeQuestions);
+      setQuestions(prev => {
+        const trash = prev.filter(q => q.isDeleted);
+        return [...repaired, ...trash];
+      });
+      alert("AI telah melengkapi data yang kosong (Pembahasan, Materi, dan Level).");
+    } catch (err) {
+      setError("Gagal melakukan perbaikan data via AI.");
+    } finally {
+      setRepairing(false);
+    }
+  };
+
   const handleGenerate = async (config: GenerationConfig) => {
     setLoading(true);
     setError(null);
@@ -52,7 +70,6 @@ const App: React.FC = () => {
       const result = await generateEduCBTQuestions(config);
       const lastOrder = questions.length > 0 ? Math.max(...questions.map(q => q.order || 0)) : 0;
       const resultWithOrder = result.map((q, i) => ({ ...q, order: lastOrder + i + 1 }));
-      
       setQuestions(prev => [...prev, ...resultWithOrder]);
     } catch (err) {
       setError("Gagal menghasilkan soal. Periksa koneksi atau API Key.");
@@ -68,7 +85,6 @@ const App: React.FC = () => {
         id: q.id || `imported_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         isDeleted: q.isDeleted ?? false,
         isRegenerating: false,
-        // Pastikan order dan token terjaga saat import
         order: q.order || (prev.length + i + 1),
         quizToken: q.quizToken || ""
       }));
@@ -80,14 +96,12 @@ const App: React.FC = () => {
   const handleRegenerateQuestion = async (id: string, instructions?: string) => {
     const target = questions.find(q => q.id === id);
     if (!target) return;
-
     setQuestions(prev => prev.map(q => q.id === id ? { ...q, isRegenerating: true } : q));
-
     try {
       const newQuestion = await regenerateSingleQuestion(target, instructions);
       setQuestions(prev => prev.map(q => q.id === id ? { ...newQuestion, isRegenerating: false } : q));
     } catch (err) {
-      alert("Gagal mengganti soal. Silakan coba lagi.");
+      alert("Gagal mengganti soal.");
       setQuestions(prev => prev.map(q => q.id === id ? { ...q, isRegenerating: false } : q));
     }
   };
@@ -95,14 +109,12 @@ const App: React.FC = () => {
   const handleChangeType = async (id: string, newType: QuestionType) => {
     const target = questions.find(q => q.id === id);
     if (!target) return;
-
     setQuestions(prev => prev.map(q => q.id === id ? { ...q, isRegenerating: true } : q));
-
     try {
       const updatedQuestion = await changeQuestionType(target, newType);
       setQuestions(prev => prev.map(q => q.id === id ? { ...updatedQuestion, isRegenerating: false } : q));
     } catch (err) {
-      alert("Gagal mengubah tipe soal. Silakan coba lagi.");
+      alert("Gagal mengubah tipe soal.");
       setQuestions(prev => prev.map(q => q.id === id ? { ...q, isRegenerating: false } : q));
     }
   };
@@ -132,7 +144,6 @@ const App: React.FC = () => {
     setQuestions(prev => prev.map(q => q.id === id ? { ...q, isDeleted } : q));
   };
 
-  // Auto-Urut juga disesuaikan agar tetap mengelompokkan per token
   const reorderSequentially = () => {
     setQuestions(prev => {
       const active = [...prev].filter(q => !q.isDeleted).sort((a, b) => {
@@ -143,7 +154,6 @@ const App: React.FC = () => {
         return (a.order || 0) - (b.order || 0);
       });
       const trashed = prev.filter(q => q.isDeleted);
-      
       const reorderedActive = active.map((q, i) => ({ ...q, order: i + 1 }));
       return [...reorderedActive, ...trashed];
     });
@@ -172,16 +182,24 @@ const App: React.FC = () => {
             {(questions.length > 0 || loading) ? (
               <div className="space-y-6">
                 <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm sticky top-20 z-40">
-                  <div className="flex items-center justify-between mb-4 gap-2">
+                  <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
                     <div className="flex bg-slate-200 p-1 rounded-lg">
                       <button onClick={() => setViewMode('preview')} className={`px-4 py-1 rounded-md text-sm font-bold ${viewMode === 'preview' ? 'bg-white text-indigo-600' : 'text-slate-600'}`}>Preview</button>
                       <button onClick={() => setViewMode('json')} className={`px-4 py-1 rounded-md text-sm font-bold ${viewMode === 'json' ? 'bg-white text-indigo-600' : 'text-slate-600'}`}>JSON</button>
                     </div>
                     <div className="flex gap-2 flex-wrap justify-end">
+                      {hasEmptyFields && activeTab === 'active' && (
+                        <button 
+                          onClick={handleSmartRepair}
+                          disabled={repairing}
+                          className="px-3 py-1.5 bg-amber-600 text-white rounded-lg text-[10px] font-black uppercase flex items-center gap-2 hover:bg-amber-700 transition-colors shadow-lg shadow-amber-200 animate-pulse-slow"
+                        >
+                          {repairing ? 'Memproses...' : '✨ Lengkapi via AI'}
+                        </button>
+                      )}
                       <button 
                         onClick={reorderSequentially}
                         className="px-3 py-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg text-[10px] font-black uppercase hover:bg-emerald-100 transition-colors"
-                        title="Urutkan nomor 1, 2, 3... berdasarkan kelompok token"
                       >
                         Auto-Urut
                       </button>
@@ -193,6 +211,14 @@ const App: React.FC = () => {
                     <button onClick={() => setActiveTab('trash')} className={`text-sm font-bold pb-2 border-b-2 ${activeTab === 'trash' ? 'border-rose-600 text-rose-600' : 'border-transparent text-slate-400'}`}>Sampah ({trashQuestions.length})</button>
                   </div>
                 </div>
+
+                {repairing && (
+                  <div className="bg-amber-50 p-6 rounded-2xl border-2 border-dashed border-amber-300 flex flex-col items-center justify-center text-center space-y-3">
+                    <div className="w-10 h-10 border-4 border-amber-500 border-t-transparent rounded-full animate-spin"></div>
+                    <p className="text-sm font-black text-amber-900 uppercase tracking-widest">Sistem sedang menganalisis & melengkapi soal yang cacat...</p>
+                    <p className="text-xs text-amber-700 italic">Harap tunggu, ini mungkin memakan waktu 30-60 detik.</p>
+                  </div>
+                )}
 
                 {viewMode === 'preview' ? (
                   <QuestionList 
