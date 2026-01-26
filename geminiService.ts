@@ -37,6 +37,12 @@ Setiap response WAJIB berupa ARRAY JSON. Gunakan standar value berikut:
 
 8. "order": Nomor urut soal (Integer).
 
+### ATURAN FORMAT TEKS (PENTING!) ###
+- JANGAN GUNAKAN TAG HTML (seperti <p>, <br/>, <strong>, <b>, <i>, dll).
+- Gunakan TEKS BIASA (Plain Text). 
+- Untuk pemformatan baris baru, gunakan karakter newline (\n) standar.
+- Pastikan teks bersih dari kode-kode pemrograman atau tag web.
+
 ### ATURAN KHUSUS TIPE "Pilihan Ganda Kompleks (B/S)" ###
 - "options": Array berisi daftar pernyataan yang harus dievaluasi (minimal 3, maksimal 5).
 - "correctAnswer": Array boolean [true, false, ...] yang urutannya sesuai dengan "options".
@@ -50,8 +56,14 @@ const SINGLE_QUESTION_SCHEMA = {
   properties: {
     type: { type: Type.STRING },
     level: { type: Type.STRING },
-    text: { type: Type.STRING },
-    explanation: { type: Type.STRING },
+    text: { 
+      type: Type.STRING,
+      description: "Teks soal dalam format PLAIN TEXT. Tanpa tag HTML seperti <p> atau <br>."
+    },
+    explanation: { 
+      type: Type.STRING,
+      description: "Penjelasan dalam format PLAIN TEXT. Tanpa tag HTML."
+    },
     material: { type: Type.STRING },
     quizToken: { type: Type.STRING },
     order: { type: Type.INTEGER },
@@ -94,8 +106,9 @@ export const generateEduCBTQuestions = async (config: GenerationConfig): Promise
 
   const prompt = `Buat ${totalQuestionsCount} soal ${config.subject} (${config.phase}). 
   Materi: ${config.material}. Komposisi: ${typeRequirements} & ${levelRequirements}. Token: ${config.quizToken}.
-  ${config.referenceText ? `Referensi: ${config.referenceText.substring(0, 3000)}` : ''}
-  ${config.specialInstructions ? `Instruksi Tambahan: ${config.specialInstructions}` : ''}`;
+  ${config.referenceText ? `Referensi Stimulus: ${config.referenceText.substring(0, 3000)}` : ''}
+  ${config.specialInstructions ? `Instruksi Tambahan: ${config.specialInstructions}` : ''}
+  INGAT: Output 'text' dan 'explanation' harus PLAIN TEXT murni, dilarang ada tag HTML <p>, <br>, dll.`;
 
   try {
     const response = await ai.models.generateContent({
@@ -126,10 +139,11 @@ export const changeQuestionType = async (oldQuestion: EduCBTQuestion, newType: Q
   TIPE BARU YANG DIMINTA: ${newType}
   
   INSTRUKSI:
-  1. Pertahankan teks soal asli semaksimal mungkin.
+  1. Pertahankan teks soal asli semaksimal mungkin dalam format PLAIN TEXT (Tanpa HTML).
   2. Rancang ulang "options" dan "correctAnswer" agar sesuai dengan format ${newType}.
   3. Jika format baru adalah Pilihan Ganda Kompleks (B/S), buat minimal 3 pernyataan di options, correctAnswer berupa array boolean, dan sertakan tfLabels sesuai konteks.
-  4. Gunakan "quizToken": "${oldQuestion.quizToken}" dalam output JSON.`;
+  4. Perbarui "explanation" dalam PLAIN TEXT agar relevan dengan kunci jawaban baru.
+  5. Gunakan "quizToken": "${oldQuestion.quizToken}" dalam output JSON.`;
 
   try {
     const response = await ai.models.generateContent({
@@ -157,7 +171,6 @@ export const changeQuestionType = async (oldQuestion: EduCBTQuestion, newType: Q
       levelCounts: {}
     });
 
-    // FORCE LOCK TOKEN: Pastikan token tidak berubah dari aslinya
     return { ...normalized, quizToken: oldQuestion.quizToken };
   } catch (error) {
     console.error("Type Change Error:", error);
@@ -168,7 +181,7 @@ export const changeQuestionType = async (oldQuestion: EduCBTQuestion, newType: Q
 export const regenerateSingleQuestion = async (oldQuestion: EduCBTQuestion, customInstructions?: string): Promise<EduCBTQuestion> => {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
-  const prompt = `Buat 1 soal PENGGANTI yang baru.
+  const prompt = `Buat 1 soal PENGGANTI yang baru dalam format PLAIN TEXT (Tanpa HTML).
   TOKEN HARUS TETAP: ${oldQuestion.quizToken}
   KONTEKS AWAL:
   - Materi: ${oldQuestion.material}
@@ -178,7 +191,7 @@ export const regenerateSingleQuestion = async (oldQuestion: EduCBTQuestion, cust
 
   ${customInstructions ? `INSTRUKSI PERBAIKAN KHUSUS: "${customInstructions}"` : 'Buat soal baru yang lebih berkualitas.'}
   
-  PENTING: Gunakan "quizToken": "${oldQuestion.quizToken}" dalam output JSON.`;
+  PENTING: Gunakan "quizToken": "${oldQuestion.quizToken}" dalam output JSON. JANGAN GUNAKAN TAG HTML.`;
 
   try {
     const response = await ai.models.generateContent({
@@ -201,7 +214,6 @@ export const regenerateSingleQuestion = async (oldQuestion: EduCBTQuestion, cust
       levelCounts: {}
     });
 
-    // FORCE LOCK TOKEN: Pastikan token tidak berubah dari aslinya
     return { ...normalized, quizToken: oldQuestion.quizToken };
   } catch (error) {
     console.error("Regeneration error:", error);
@@ -252,10 +264,16 @@ const normalizeQuestion = (q: any, config: any): EduCBTQuestion => {
 
   const finalQuizToken = (q.quizToken || config.quizToken || "").toString().toUpperCase();
 
+  // Clean HTML from text if AI still produces it (Double Safety)
+  const cleanHtml = (str: string) => {
+    return str.replace(/<[^>]*>?/gm, '');
+  };
+
   return {
     ...q,
     id: q.id || `q_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-    text: q.text || q.question || "Teks soal tidak ter-generate.",
+    text: cleanHtml(q.text || q.question || "Teks soal tidak ter-generate."),
+    explanation: cleanHtml(q.explanation || ""),
     correctAnswer: correctedAnswer,
     subject: q.subject || config.subject,
     phase: q.phase || config.phase,
