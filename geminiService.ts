@@ -41,7 +41,6 @@ Setiap response WAJIB berupa ARRAY JSON. Gunakan standar value berikut:
 - JANGAN GUNAKAN TAG HTML (seperti <p>, <br/>, <strong>, <b>, <i>, dll).
 - Gunakan TEKS BIASA (Plain Text). 
 - Untuk pemformatan baris baru, gunakan karakter newline (\n) standar.
-- Pastikan teks bersih dari kode-kode pemrograman atau tag web.
 
 ### ATURAN KHUSUS TIPE "Pilihan Ganda Kompleks (B/S)" ###
 - "options": Array berisi daftar pernyataan yang harus dievaluasi (minimal 3, maksimal 5).
@@ -56,22 +55,13 @@ const SINGLE_QUESTION_SCHEMA = {
   properties: {
     type: { type: Type.STRING },
     level: { type: Type.STRING },
-    text: { 
-      type: Type.STRING,
-      description: "Teks soal dalam format PLAIN TEXT. Tanpa tag HTML."
-    },
-    explanation: { 
-      type: Type.STRING,
-      description: "Penjelasan dalam format PLAIN TEXT. Tanpa tag HTML."
-    },
+    text: { type: Type.STRING },
+    explanation: { type: Type.STRING },
     material: { type: Type.STRING },
     quizToken: { type: Type.STRING },
     order: { type: Type.INTEGER },
     options: { type: Type.ARRAY, items: { type: Type.STRING } },
-    correctAnswer: { 
-      type: Type.STRING, 
-      description: "PG: 0-n. MCMA: [0,1]. B/S: [true, false]." 
-    },
+    correctAnswer: { type: Type.STRING },
     tfLabels: {
       type: Type.OBJECT,
       properties: {
@@ -90,34 +80,48 @@ const QUESTIONS_ARRAY_SCHEMA = {
 };
 
 /**
- * Utility function to handle API calls with exponential backoff for 429/500 errors
+ * Enhanced API Caller with Fallback and Retry
  */
-async function callGeminiWithRetry(fn: () => Promise<any>, maxRetries = 3): Promise<any> {
+async function smartGeminiCall(payload: any, maxRetries = 3) {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   let lastError: any;
-  for (let i = 0; i < maxRetries; i++) {
-    try {
-      return await fn();
-    } catch (error: any) {
-      lastError = error;
-      const errorMessage = error?.message || "";
-      const isQuotaError = errorMessage.toLowerCase().includes("quota") || errorMessage.includes("429");
-      const isServerError = errorMessage.includes("500") || errorMessage.includes("503");
+  
+  // Model priorities
+  const models = ['gemini-3-pro-preview', 'gemini-3-flash-preview'];
 
-      if (isQuotaError || isServerError) {
-        const waitTime = Math.pow(2, i) * 2000; // 2s, 4s, 8s
-        console.warn(`Gemini API Quota/Server error. Retrying in ${waitTime}ms... (Attempt ${i + 1}/${maxRetries})`);
-        await new Promise(resolve => setTimeout(resolve, waitTime));
-        continue;
+  for (const modelName of models) {
+    for (let i = 0; i < maxRetries; i++) {
+      try {
+        console.log(`Calling ${modelName}... (Attempt ${i + 1})`);
+        const response = await ai.models.generateContent({
+          ...payload,
+          model: modelName
+        });
+        return response;
+      } catch (error: any) {
+        lastError = error;
+        const msg = (error?.message || "").toLowerCase();
+        
+        // If it's a quota error (429) or overloaded (503/429)
+        if (msg.includes("quota") || msg.includes("429") || msg.includes("overloaded") || msg.includes("limit")) {
+          const wait = Math.pow(2, i) * 3000;
+          console.warn(`Quota hit on ${modelName}. Waiting ${wait}ms...`);
+          await new Promise(r => setTimeout(r, wait));
+          continue; // Try next retry for the SAME model
+        }
+        
+        // If it's another error, stop retrying this model
+        break;
       }
-      throw error;
     }
+    // If we reach here, the current model failed all retries, move to next model (Flash)
+    console.warn(`${modelName} failed after all retries. Switching to fallback...`);
   }
-  throw lastError;
+
+  throw lastError || new Error("Semua model Gemini sedang sibuk atau mencapai batas kuota.");
 }
 
 export const generateEduCBTQuestions = async (config: GenerationConfig): Promise<EduCBTQuestion[]> => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-  
   const typeRequirements = Object.entries(config.typeCounts)
     .filter(([_, count]) => count > 0)
     .map(([type, count]) => `${count} soal ${type}`)
@@ -128,59 +132,45 @@ export const generateEduCBTQuestions = async (config: GenerationConfig): Promise
     .map(([level, count]) => `${count} level ${level}`)
     .join(', ');
 
-  const totalQuestionsCount = (Object.values(config.typeCounts) as number[]).reduce((a, b) => a + b, 0);
+  const total = (Object.values(config.typeCounts) as number[]).reduce((a, b) => a + b, 0);
 
-  const prompt = `Buat ${totalQuestionsCount} soal ${config.subject} (${config.phase}). 
-  Materi: ${config.material}. Komposisi: ${typeRequirements} & ${levelRequirements}. Token: ${config.quizToken}.
-  ${config.referenceText ? `Referensi Stimulus: ${config.referenceText.substring(0, 3000)}` : ''}
-  ${config.specialInstructions ? `Instruksi Tambahan: ${config.specialInstructions}` : ''}
-  INGAT: Output 'text' dan 'explanation' harus PLAIN TEXT murni, dilarang ada tag HTML <p>, <br>, dll.`;
+  const prompt = `Buat ${total} soal ${config.subject}. Materi: ${config.material}. 
+  Komposisi: ${typeRequirements} & ${levelRequirements}. Token: ${config.quizToken}.
+  ${config.referenceText ? `Referensi: ${config.referenceText.substring(0, 3000)}` : ''}
+  Output PLAIN TEXT (No HTML).`;
 
   try {
-    const response = await callGeminiWithRetry(() => ai.models.generateContent({
-      model: 'gemini-3-pro-preview',
+    const response = await smartGeminiCall({
       contents: prompt,
       config: {
         systemInstruction: SYSTEM_INSTRUCTION,
         responseMimeType: "application/json",
         responseSchema: QUESTIONS_ARRAY_SCHEMA
       }
-    }));
+    });
 
     const parsed = JSON.parse(response.text || "[]");
     return parsed.map((q: any) => normalizeQuestion(q, config));
   } catch (error: any) {
-    if (error?.message?.includes("quota")) {
-      throw new Error("Batas penggunaan (Quota) tercapai. Silakan tunggu 1 menit lalu coba lagi.");
-    }
-    throw error;
+    throw new Error("Gagal memproses permintaan. Server Gemini sedang sangat sibuk (Quota Exceeded). Silakan coba lagi dalam 1-2 menit.");
   }
 };
 
 export const changeQuestionType = async (oldQuestion: EduCBTQuestion, newType: QuestionType): Promise<EduCBTQuestion> => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-  
-  const prompt = `TUGAS: UBAH TIPE SOAL INI.
-  TOKEN HARUS TETAP: ${oldQuestion.quizToken}
-  TEKS SOAL ASLI: "${oldQuestion.text}"
-  TIPE ASLI: ${oldQuestion.type}
-  TIPE BARU YANG DIMINTA: ${newType}
-  
-  INSTRUKSI:
-  1. Pertahankan teks soal asli semaksimal mungkin dalam format PLAIN TEXT.
-  2. Rancang ulang "options" dan "correctAnswer" agar sesuai dengan format ${newType}.
-  3. Gunakan "quizToken": "${oldQuestion.quizToken}" dalam output JSON.`;
+  const prompt = `UBAH TIPE SOAL. TOKEN TETAP: ${oldQuestion.quizToken}
+  SOAL: "${oldQuestion.text}"
+  TIPE BARU: ${newType}
+  GUNAKAN "quizToken": "${oldQuestion.quizToken}" dalam JSON. NO HTML.`;
 
   try {
-    const response = await callGeminiWithRetry(() => ai.models.generateContent({
-      model: 'gemini-3-pro-preview',
+    const response = await smartGeminiCall({
       contents: prompt,
       config: {
         systemInstruction: SYSTEM_INSTRUCTION,
         responseMimeType: "application/json",
         responseSchema: SINGLE_QUESTION_SCHEMA
       }
-    }));
+    });
 
     const parsed = JSON.parse(response.text || "{}");
     const normalized = normalizeQuestion({ 
@@ -199,36 +189,25 @@ export const changeQuestionType = async (oldQuestion: EduCBTQuestion, newType: Q
 
     return { ...normalized, quizToken: oldQuestion.quizToken };
   } catch (error) {
-    console.error("Type Change Error:", error);
-    throw error;
+    throw new Error("Gagal mengubah tipe soal karena batasan kuota API.");
   }
 };
 
 export const regenerateSingleQuestion = async (oldQuestion: EduCBTQuestion, customInstructions?: string): Promise<EduCBTQuestion> => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-  
-  const prompt = `Buat 1 soal PENGGANTI yang baru dalam format PLAIN TEXT.
-  TOKEN HARUS TETAP: ${oldQuestion.quizToken}
-  KONTEKS AWAL:
-  - Materi: ${oldQuestion.material}
-  - Tipe: ${oldQuestion.type}
-  - Level: ${oldQuestion.level}
-  - Mapel: ${oldQuestion.subject} (${oldQuestion.phase})
-
-  ${customInstructions ? `INSTRUKSI PERBAIKAN KHUSUS: "${customInstructions}"` : 'Buat soal baru yang lebih berkualitas.'}
-  
-  PENTING: Gunakan "quizToken": "${oldQuestion.quizToken}" dalam output JSON.`;
+  const prompt = `REGENERASI SOAL. TOKEN TETAP: ${oldQuestion.quizToken}
+  MATERI: ${oldQuestion.material}
+  ${customInstructions ? `INSTRUKSI: ${customInstructions}` : 'Buat lebih berkualitas.'}
+  GUNAKAN "quizToken": "${oldQuestion.quizToken}" dalam JSON. NO HTML.`;
 
   try {
-    const response = await callGeminiWithRetry(() => ai.models.generateContent({
-      model: 'gemini-3-pro-preview',
+    const response = await smartGeminiCall({
       contents: prompt,
       config: {
         systemInstruction: SYSTEM_INSTRUCTION,
         responseMimeType: "application/json",
         responseSchema: SINGLE_QUESTION_SCHEMA
       }
-    }));
+    });
 
     const parsed = JSON.parse(response.text || "{}");
     const normalized = normalizeQuestion({ ...parsed, id: oldQuestion.id, order: oldQuestion.order }, {
@@ -242,8 +221,7 @@ export const regenerateSingleQuestion = async (oldQuestion: EduCBTQuestion, cust
 
     return { ...normalized, quizToken: oldQuestion.quizToken };
   } catch (error) {
-    console.error("Regeneration error:", error);
-    throw error;
+    throw new Error("Gagal meregenerasi soal karena batasan kuota API.");
   }
 };
 
@@ -253,20 +231,14 @@ const normalizeQuestion = (q: any, config: any): EduCBTQuestion => {
   if (typeof correctedAnswer === 'string') {
     const trimmed = correctedAnswer.trim();
     if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
-      try { 
-        correctedAnswer = JSON.parse(trimmed); 
-      } catch(e) {
+      try { correctedAnswer = JSON.parse(trimmed); } catch(e) {
         if (q.type === QuestionType.KompleksBS) {
            correctedAnswer = trimmed.replace(/[\[\]]/g, '').split(',').map(s => s.trim().toLowerCase() === 'true');
         }
       }
-    } else if (trimmed.toLowerCase() === 'true') {
-      correctedAnswer = true;
-    } else if (trimmed.toLowerCase() === 'false') {
-      correctedAnswer = false;
-    } else if (!isNaN(parseInt(trimmed))) {
-      correctedAnswer = parseInt(trimmed);
-    }
+    } else if (trimmed.toLowerCase() === 'true') { correctedAnswer = true; }
+    else if (trimmed.toLowerCase() === 'false') { correctedAnswer = false; }
+    else if (!isNaN(parseInt(trimmed))) { correctedAnswer = parseInt(trimmed); }
   }
 
   if (q.type === QuestionType.PilihanGanda && typeof correctedAnswer !== 'number') {
@@ -274,31 +246,19 @@ const normalizeQuestion = (q: any, config: any): EduCBTQuestion => {
   }
 
   if (q.type === QuestionType.KompleksBS) {
-    if (!Array.isArray(correctedAnswer)) {
-      correctedAnswer = q.options?.map(() => false) || [];
-    }
+    if (!Array.isArray(correctedAnswer)) correctedAnswer = q.options?.map(() => false) || [];
     correctedAnswer = (correctedAnswer as any[]).map(val => val === true || val === "true");
-    
-    if (!q.tfLabels) {
-      q.tfLabels = { "true": "Benar", "false": "Salah" };
-    }
-  }
-
-  if (q.type === QuestionType.MCMA && !Array.isArray(correctedAnswer)) {
-    correctedAnswer = [parseInt(correctedAnswer as any) || 0];
+    if (!q.tfLabels) q.tfLabels = { "true": "Benar", "false": "Salah" };
   }
 
   const finalQuizToken = (q.quizToken || config.quizToken || "").toString().toUpperCase();
-
-  const cleanHtml = (str: string) => {
-    return str.replace(/<[^>]*>?/gm, '');
-  };
+  const cleanHtml = (str: string) => (str || "").replace(/<[^>]*>?/gm, '');
 
   return {
     ...q,
     id: q.id || `q_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-    text: cleanHtml(q.text || q.question || "Teks soal tidak ter-generate."),
-    explanation: cleanHtml(q.explanation || ""),
+    text: cleanHtml(q.text || q.question),
+    explanation: cleanHtml(q.explanation),
     correctAnswer: correctedAnswer,
     subject: q.subject || config.subject,
     phase: q.phase || config.phase,
@@ -311,12 +271,10 @@ const normalizeQuestion = (q: any, config: any): EduCBTQuestion => {
 };
 
 export const generateImage = async (prompt: string): Promise<string> => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   try {
-    const response = await callGeminiWithRetry(() => ai.models.generateContent({
-      model: 'gemini-2.5-flash-image',
-      contents: { parts: [{ text: `High quality educational vector illustration: ${prompt}` }] }
-    }));
+    const response = await smartGeminiCall({
+      contents: { parts: [{ text: `High quality educational illustration: ${prompt}` }] }
+    });
     const imgPart = response.candidates?.[0]?.content?.parts.find(p => p.inlineData);
     return imgPart?.inlineData ? `data:image/png;base64,${imgPart.inlineData.data}` : "";
   } catch (error) { return ""; }
