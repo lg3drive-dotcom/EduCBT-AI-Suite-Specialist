@@ -276,12 +276,14 @@ const GenerationForm: React.FC<Props> = ({ onGenerate, onImportJson, isLoading }
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {Object.values(QuestionType).map(type => (
-              <div key={type} className="flex items-center justify-between gap-4 bg-white p-3 rounded-xl border-2 border-yellow-100 shadow-sm hover:border-yellow-400 transition-colors">
-                <span className="text-[10px] font-black text-yellow-800 truncate uppercase leading-none">{type}</span>
+              <div key={type} className="flex items-center justify-between gap-3 bg-white p-3 rounded-xl border-2 border-yellow-100 shadow-sm hover:border-yellow-400 transition-colors">
+                <span className="text-[10px] font-black text-yellow-800 uppercase leading-tight flex-1">
+                  {type}
+                </span>
                 <input
                   type="number"
                   min={0}
-                  className="w-16 px-2 py-2 rounded-lg border-2 border-yellow-200 bg-yellow-50 text-center text-sm font-black text-yellow-900 focus:ring-2 focus:ring-yellow-500 outline-none"
+                  className="w-14 shrink-0 px-2 py-2 rounded-lg border-2 border-yellow-200 bg-yellow-50 text-center text-sm font-black text-yellow-900 focus:ring-2 focus:ring-yellow-500 outline-none"
                   value={formData.typeCounts[type]}
                   onChange={(e) => updateTypeCount(type, e.target.value)}
                 />

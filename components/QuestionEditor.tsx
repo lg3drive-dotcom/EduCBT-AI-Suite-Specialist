@@ -28,6 +28,71 @@ const QuestionEditor: React.FC<Props> = ({ question, onSave, onClose }) => {
     setEdited({ ...edited, optionImages: newOptionImages });
   };
 
+  const handleAddOption = () => {
+    if (edited.options.length >= 10) return;
+    const newOptions = [...edited.options, ""];
+    const newOptionImages = [...(edited.optionImages || []), null];
+    
+    let newCorrectAnswer = edited.correctAnswer;
+    if (edited.type === QuestionType.Kompleks || edited.type === QuestionType.KompleksBS) {
+      newCorrectAnswer = [...(Array.isArray(edited.correctAnswer) ? edited.correctAnswer : []), false];
+    }
+
+    setEdited({ 
+      ...edited, 
+      options: newOptions, 
+      optionImages: newOptionImages,
+      correctAnswer: newCorrectAnswer
+    });
+  };
+
+  const handleDeleteOption = (idx: number) => {
+    if (edited.options.length <= 2) {
+      alert("Minimal harus ada 2 opsi jawaban.");
+      return;
+    }
+
+    const newOptions = [...edited.options];
+    newOptions.splice(idx, 1);
+
+    const newOptionImages = [...(edited.optionImages || [])];
+    if (newOptionImages.length > idx) {
+      newOptionImages.splice(idx, 1);
+    }
+
+    let newCorrectAnswer = edited.correctAnswer;
+
+    // Sinkronisasi Kunci Jawaban saat opsi dihapus
+    if (edited.type === QuestionType.PilihanGanda) {
+      if (typeof newCorrectAnswer === 'number') {
+        if (newCorrectAnswer === idx) {
+          newCorrectAnswer = 0; // Reset ke A jika kunci yang dihapus
+        } else if (newCorrectAnswer > idx) {
+          newCorrectAnswer -= 1; // Geser index ke atas
+        }
+      }
+    } else if (edited.type === QuestionType.MCMA) {
+      if (Array.isArray(newCorrectAnswer)) {
+        newCorrectAnswer = (newCorrectAnswer as number[])
+          .filter(i => i !== idx) // Hapus jika index tersebut ada di kunci
+          .map(i => (i > idx ? i - 1 : i)); // Geser index lainnya
+      }
+    } else if (edited.type === QuestionType.Kompleks || edited.type === QuestionType.KompleksBS) {
+      if (Array.isArray(newCorrectAnswer)) {
+        const updated = [...(newCorrectAnswer as boolean[])];
+        updated.splice(idx, 1);
+        newCorrectAnswer = updated;
+      }
+    }
+
+    setEdited({
+      ...edited,
+      options: newOptions,
+      optionImages: newOptionImages,
+      correctAnswer: newCorrectAnswer
+    });
+  };
+
   const handleCorrectAnswerChange = (idx: number) => {
     if (edited.type === QuestionType.PilihanGanda) {
       setEdited({ ...edited, correctAnswer: idx });
@@ -37,12 +102,7 @@ const QuestionEditor: React.FC<Props> = ({ question, onSave, onClose }) => {
         ? current.filter(i => i !== idx) 
         : [...current, idx];
       setEdited({ ...edited, correctAnswer: updated });
-    } else if (edited.type === QuestionType.Kompleks) {
-      const current = Array.isArray(edited.correctAnswer) ? (edited.correctAnswer as boolean[]) : edited.options.map(() => false);
-      const updated = [...current];
-      updated[idx] = !updated[idx];
-      setEdited({ ...edited, correctAnswer: updated });
-    } else if (edited.type === QuestionType.KompleksBS) {
+    } else if (edited.type === QuestionType.Kompleks || edited.type === QuestionType.KompleksBS) {
       const current = Array.isArray(edited.correctAnswer) ? (edited.correctAnswer as boolean[]) : edited.options.map(() => false);
       const updated = [...current];
       updated[idx] = !updated[idx];
@@ -122,12 +182,32 @@ const QuestionEditor: React.FC<Props> = ({ question, onSave, onClose }) => {
 
             <div className="lg:col-span-5 space-y-6">
               <div className="bg-emerald-50/30 p-5 rounded-2xl border border-emerald-100">
-                <label className="block text-xs font-black text-emerald-900 uppercase tracking-widest mb-4">
-                  {isBS ? 'Daftar Pernyataan' : 'Pilihan Jawaban'}
-                </label>
+                <div className="flex justify-between items-center mb-4">
+                  <label className="block text-xs font-black text-emerald-900 uppercase tracking-widest">
+                    {isBS ? 'Daftar Pernyataan' : 'Pilihan Jawaban'}
+                  </label>
+                  <button 
+                    type="button"
+                    onClick={handleAddOption}
+                    className="px-3 py-1 bg-emerald-600 text-white text-[10px] font-black uppercase rounded-lg hover:bg-emerald-700 transition-colors"
+                  >
+                    + Tambah Opsi
+                  </button>
+                </div>
+                
                 <div className="space-y-4">
                   {edited.options.map((opt, i) => (
-                    <div key={i} className="group bg-white p-4 rounded-xl border border-emerald-100 shadow-sm hover:shadow-md transition-all space-y-3">
+                    <div key={i} className="group bg-white p-4 rounded-xl border border-emerald-100 shadow-sm hover:shadow-md transition-all space-y-3 relative">
+                      {/* Tombol Hapus Opsi */}
+                      <button 
+                        type="button"
+                        onClick={() => handleDeleteOption(i)}
+                        className="absolute -top-2 -right-2 w-6 h-6 bg-rose-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-lg hover:bg-rose-600 z-10"
+                        title="Hapus Opsi Ini"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                      </button>
+
                       <div className="flex items-center gap-3">
                         <div className="flex flex-col items-center gap-1">
                           {isBS ? (
@@ -143,16 +223,19 @@ const QuestionEditor: React.FC<Props> = ({ question, onSave, onClose }) => {
                               {(edited.correctAnswer as boolean[])[i] ? edited.tfLabels?.true : edited.tfLabels?.false}
                             </button>
                           ) : (
-                            <input 
-                              type={edited.type === QuestionType.PilihanGanda ? "radio" : "checkbox"} 
-                              checked={
-                                Array.isArray(edited.correctAnswer) 
-                                  ? (typeof edited.correctAnswer[0] === 'boolean' ? edited.correctAnswer[i] as boolean : (edited.correctAnswer as number[]).includes(i))
-                                  : edited.correctAnswer === i
-                              }
-                              onChange={() => handleCorrectAnswerChange(i)}
-                              className="w-6 h-6 text-emerald-600 rounded-full border-2 border-emerald-200 focus:ring-emerald-500 cursor-pointer"
-                            />
+                            <div className="flex flex-col items-center gap-1">
+                              <span className="text-[10px] font-black text-slate-400">{String.fromCharCode(65+i)}</span>
+                              <input 
+                                type={edited.type === QuestionType.PilihanGanda ? "radio" : "checkbox"} 
+                                checked={
+                                  Array.isArray(edited.correctAnswer) 
+                                    ? (typeof edited.correctAnswer[0] === 'boolean' ? edited.correctAnswer[i] as boolean : (edited.correctAnswer as number[]).includes(i))
+                                    : edited.correctAnswer === i
+                                }
+                                onChange={() => handleCorrectAnswerChange(i)}
+                                className="w-6 h-6 text-emerald-600 rounded-full border-2 border-emerald-200 focus:ring-emerald-500 cursor-pointer"
+                              />
+                            </div>
                           )}
                         </div>
                         <input 
