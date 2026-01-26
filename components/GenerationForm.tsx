@@ -53,16 +53,28 @@ const GenerationForm: React.FC<Props> = ({ onGenerate, onImportJson, isLoading }
       const explanation = (row["Pembahasan"] || row["penjelasan"] || "").toString();
       const token = (row["Token Paket"] || row["Token"] || row["token"] || "").toString();
       
+      // Link Gambar Soal
+      const mainImage = (row["Gambar Soal (URL)"] || row["Gambar Soal"] || "").toString();
+
       const options = [
         row["Opsi A"], row["Opsi B"], row["Opsi C"], row["Opsi D"], row["Opsi E"]
       ].filter(o => o !== undefined && o !== null && o !== "").map(o => o.toString());
+
+      // Link Gambar Opsi
+      const optionImages = [
+        row["Gambar Opsi A (URL)"] || row["Gambar Opsi A"] || null,
+        row["Gambar Opsi B (URL)"] || row["Gambar Opsi B"] || null,
+        row["Gambar Opsi C (URL)"] || row["Gambar Opsi C"] || null,
+        row["Gambar Opsi D (URL)"] || row["Gambar Opsi D"] || null,
+        row["Gambar Opsi E (URL)"] || row["Gambar Opsi E"] || null,
+      ].map(o => o ? o.toString() : null);
 
       let kunci = (row["Kunci Jawaban"] || row["Kunci"] || row["kunci"] || "").toString();
       let correctAnswer: any = 0;
 
       // Normalisasi Kunci Jawaban
       if (tipe === QuestionType.PilihanGanda) {
-        correctAnswer = (kunci.charCodeAt(0) - 65); // A=0, B=1, dst
+        correctAnswer = (kunci.toUpperCase().charCodeAt(0) - 65); // A=0, B=1, dst
         if (isNaN(correctAnswer) || correctAnswer < 0) correctAnswer = 0;
       } else if (tipe === QuestionType.MCMA) {
         correctAnswer = kunci.split(/[,;|]/).map(k => k.trim().toUpperCase().charCodeAt(0) - 65).filter(n => !isNaN(n) && n >= 0);
@@ -85,6 +97,8 @@ const GenerationForm: React.FC<Props> = ({ onGenerate, onImportJson, isLoading }
         text: teks,
         explanation: explanation,
         options: options,
+        optionImages: optionImages,
+        image: mainImage || undefined,
         correctAnswer: correctAnswer,
         isDeleted: false,
         createdAt: Date.now(),

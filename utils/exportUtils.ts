@@ -1,8 +1,6 @@
 
 import { EduCBTQuestion, QuestionType } from "../types";
 
-// ... (keep existing functions)
-
 export const downloadExcelTemplate = () => {
   // @ts-ignore
   const XLSX = window.XLSX;
@@ -10,12 +8,36 @@ export const downloadExcelTemplate = () => {
 
   // Sheet 1: Format Soal
   const headers = [
-    ["No", "Tipe Soal", "Level", "Materi", "Teks Soal", "Opsi A", "Opsi B", "Opsi C", "Opsi D", "Opsi E", "Kunci Jawaban", "Pembahasan", "Token Paket"]
+    [
+      "No", "Tipe Soal", "Level", "Materi", "Teks Soal", "Gambar Soal (URL)",
+      "Opsi A", "Gambar Opsi A (URL)", 
+      "Opsi B", "Gambar Opsi B (URL)",
+      "Opsi C", "Gambar Opsi C (URL)",
+      "Opsi D", "Gambar Opsi D (URL)",
+      "Opsi E", "Gambar Opsi E (URL)",
+      "Kunci Jawaban", "Pembahasan", "Token Paket"
+    ]
   ];
+  
   const sampleData = [
-    [1, "Pilihan Ganda", "L1", "Ekosistem", "Apa peran produsen?", "Makan", "Buat makanan", "Urai", "Parasit", "", "B", "Tumbuhan buat makanan sendiri", "IPA-01"],
-    [2, "Pilihan Jamak (MCMA)", "L2", "Sistem Tubuh", "Mana yang organ pernapasan?", "Paru-paru", "Jantung", "Hidung", "Lambung", "", "A, C", "Paru dan hidung alat napas", "IPA-01"],
-    [3, "Pilihan Ganda Kompleks (B/S)", "L3", "Matematika", "2+2=4", "Pernyataan 1", "Pernyataan 2", "Pernyataan 3", "", "", "B, S, B", "Penjelasan logis", "MAT-01"]
+    [
+      1, "Pilihan Ganda", "L1", "Ekosistem", "Perhatikan gambar hewan di samping. Apa perannya?", "https://images.unsplash.com/photo-1546182990-dffeafbe841d?w=200", 
+      "Produsen", "", 
+      "Konsumen I", "", 
+      "Pengurai", "", 
+      "Predator", "", 
+      "", "", 
+      "B", "Singa adalah konsumen puncak", "IPA-01"
+    ],
+    [
+      2, "Pilihan Jamak (MCMA)", "L2", "Geometri", "Mana yang termasuk bangun ruang?", "", 
+      "Kubus", "https://cdn-icons-png.flaticon.com/128/3305/3305544.png", 
+      "Lingkaran", "", 
+      "Balok", "https://cdn-icons-png.flaticon.com/128/3305/3305561.png", 
+      "Segitiga", "", 
+      "", "", 
+      "A, C", "Kubus dan Balok punya volume", "MAT-01"
+    ]
   ];
   
   const wsSoal = XLSX.utils.aoa_to_sheet([...headers, ...sampleData]);
@@ -23,24 +45,24 @@ export const downloadExcelTemplate = () => {
 
   // Sheet 2: Panduan
   const guide = [
-    ["PANDUAN PENGISIAN TEMPLATE SOAL EDUCBT"],
+    ["PANDUAN PENGISIAN TEMPLATE SOAL EDUCBT PRO"],
     [""],
     ["KOLOM", "INSTRUKSI PENGISIAN"],
-    ["Tipe Soal", "Wajib diisi: 'Pilihan Ganda', 'Pilihan Jamak (MCMA)', 'Pilihan Ganda Kompleks', 'Pilihan Ganda Kompleks (B/S)', 'ISIAN', atau 'URAIAN'"],
-    ["Level", "Wajib diisi: 'L1', 'L2', atau 'L3'"],
-    ["Opsi A-E", "Isi teks pilihan jawaban. Kosongkan jika tidak diperlukan (misal Isian/Uraian)"],
-    ["Kunci Jawaban", "PENTING: FORMAT HARUS SESUAI TIPE"],
-    ["- Pilihan Ganda", "Isi dengan huruf: A / B / C / D / E"],
-    ["- Pilihan Jamak (MCMA)", "Isi dengan huruf dipisah koma: A, C, D"],
-    ["- Kompleks (B/S)", "Isi dengan B (Benar) atau S (Salah) dipisah koma: B, S, B, B"],
-    ["- Isian/Uraian", "Isi teks kunci jawaban atau jawaban singkat"],
+    ["Tipe Soal", "Wajib: 'Pilihan Ganda', 'Pilihan Jamak (MCMA)', 'Pilihan Ganda Kompleks', 'Pilihan Ganda Kompleks (B/S)', 'ISIAN', atau 'URAIAN'"],
+    ["Gambar Soal (URL)", "Masukkan link/URL gambar langsung (akhiran .jpg, .png, .webp). Gambar akan otomatis muncul di soal."],
+    ["Gambar Opsi (URL)", "Sama seperti Gambar Soal, tapi untuk diletakkan di bawah teks pilihan jawaban."],
+    ["Kunci Jawaban", "FORMAT HARUS TEPAT:"],
+    ["- Pilihan Ganda", "Gunakan huruf: A / B / C / D / E"],
+    ["- Pilihan Jamak", "Gunakan huruf dipisah koma: A, C"],
+    ["- Kompleks (B/S)", "Gunakan B atau S dipisah koma sesuai jumlah pernyataan: B, S, B"],
     [""],
-    ["TIPS", "Jangan mengubah urutan kolom. Pastikan tidak ada simbol aneh di Tipe Soal."]
+    ["TIPS GAMBAR", "Gunakan link dari hosting gambar publik agar gambar tidak error saat diakses sistem lain."],
+    ["PENTING", "Jangan menghapus atau mengubah urutan header (Baris 1)."]
   ];
   const wsGuide = XLSX.utils.aoa_to_sheet(guide);
   XLSX.utils.book_append_sheet(wb, wsGuide, "Panduan");
 
-  XLSX.writeFile(wb, "Template_Soal_EduCBT.xlsx");
+  XLSX.writeFile(wb, "Template_Soal_EduCBT_Pro.xlsx");
 };
 
 const getSoalHtml = (questions: EduCBTQuestion[]) => {
