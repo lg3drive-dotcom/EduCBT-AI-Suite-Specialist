@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { EduCBTQuestion, QuestionType } from '../types';
 import ImageControl from './ImageControl';
+import { generateExplanationForQuestion, analyzeLevelForQuestion } from '../geminiService';
 
 interface Props {
   question: EduCBTQuestion;
@@ -16,6 +17,9 @@ const QuestionEditor: React.FC<Props> = ({ question, onSave, onClose }) => {
     tfLabels: question.tfLabels || (question.type === QuestionType.KompleksBS ? { true: 'Benar', false: 'Salah' } : undefined)
   });
 
+  const [isGeneratingExpl, setIsGeneratingExpl] = useState(false);
+  const [isAnalyzingLevel, setIsAnalyzingLevel] = useState(false);
+
   const handleOptionChange = (idx: number, text: string) => {
     const newOptions = [...edited.options];
     newOptions[idx] = text;
@@ -28,14 +32,12 @@ const QuestionEditor: React.FC<Props> = ({ question, onSave, onClose }) => {
     setEdited({ ...edited, optionImages: newOptionImages });
   };
 
-  // Add a new option and initialize its correct answer state correctly based on question type
   const handleAddOption = () => {
     if (edited.options.length >= 10) return;
     const newOptions = [...edited.options, ""];
     const newOptionImages = [...(edited.optionImages || []), null];
     
     let newCorrectAnswer = edited.correctAnswer;
-    // Fix: Explicitly cast to boolean[] when adding a new option for complex types to prevent mixed-type array errors
     if (edited.type === QuestionType.Kompleks || edited.type === QuestionType.KompleksBS) {
       const current = Array.isArray(edited.correctAnswer) ? (edited.correctAnswer as boolean[]) : [];
       newCorrectAnswer = [...current, false];
@@ -49,7 +51,6 @@ const QuestionEditor: React.FC<Props> = ({ question, onSave, onClose }) => {
     });
   };
 
-  // Remove an option and correctly synchronize the correct answer state indices/values
   const handleDeleteOption = (idx: number) => {
     if (edited.options.length <= 2) {
       alert("Minimal harus ada 2 opsi jawaban.");
@@ -66,24 +67,22 @@ const QuestionEditor: React.FC<Props> = ({ question, onSave, onClose }) => {
 
     let newCorrectAnswer = edited.correctAnswer;
 
-    // Sinkronisasi Kunci Jawaban saat opsi dihapus
     if (edited.type === QuestionType.PilihanGanda) {
       if (typeof newCorrectAnswer === 'number') {
         if (newCorrectAnswer === idx) {
-          newCorrectAnswer = 0; // Reset ke A jika kunci yang dihapus
+          newCorrectAnswer = 0; 
         } else if (newCorrectAnswer > idx) {
-          newCorrectAnswer -= 1; // Geser index ke atas
+          newCorrectAnswer -= 1; 
         }
       }
     } else if (edited.type === QuestionType.MCMA) {
       if (Array.isArray(newCorrectAnswer)) {
         newCorrectAnswer = (newCorrectAnswer as number[])
-          .filter(i => i !== idx) // Hapus jika index tersebut ada di kunci
-          .map(i => (i > idx ? i - 1 : i)); // Geser index lainnya
+          .filter(i => i !== idx) 
+          .map(i => (i > idx ? i - 1 : i)); 
       }
     } else if (edited.type === QuestionType.Kompleks || edited.type === QuestionType.KompleksBS) {
       if (Array.isArray(newCorrectAnswer)) {
-        // Fix: Explicitly cast to boolean[] before splicing to maintain array type integrity
         const updated = [...(newCorrectAnswer as boolean[])];
         updated.splice(idx, 1);
         newCorrectAnswer = updated;
@@ -125,6 +124,38 @@ const QuestionEditor: React.FC<Props> = ({ question, onSave, onClose }) => {
     });
   };
 
+  const handleAutoGenerateExplanation = async () => {
+    if (!edited.text) {
+      alert("Teks soal tidak boleh kosong untuk membuat pembahasan.");
+      return;
+    }
+    setIsGeneratingExpl(true);
+    try {
+      const explanation = await generateExplanationForQuestion(edited);
+      setEdited(prev => ({ ...prev, explanation }));
+    } catch (err) {
+      alert("Gagal generate pembahasan.");
+    } finally {
+      setIsGeneratingExpl(false);
+    }
+  };
+
+  const handleAutoAnalyzeLevel = async () => {
+    if (!edited.text) {
+      alert("Teks soal tidak boleh kosong untuk analisis level.");
+      return;
+    }
+    setIsAnalyzingLevel(true);
+    try {
+      const level = await analyzeLevelForQuestion(edited);
+      setEdited(prev => ({ ...prev, level }));
+    } catch (err) {
+      alert("Gagal analisis level.");
+    } finally {
+      setIsAnalyzingLevel(false);
+    }
+  };
+
   const isBS = edited.type === QuestionType.KompleksBS;
 
   return (
@@ -133,7 +164,31 @@ const QuestionEditor: React.FC<Props> = ({ question, onSave, onClose }) => {
         <div className="px-8 py-5 border-b border-slate-100 flex justify-between items-center bg-indigo-50/30">
           <div>
             <h2 className="text-2xl font-black text-indigo-900">Editor Butir Soal</h2>
-            <p className="text-xs text-indigo-600 font-bold uppercase tracking-widest">{edited.type} • {edited.level}</p>
+            <div className="flex items-center gap-2 mt-1">
+              <span className="text-xs text-indigo-600 font-bold uppercase tracking-widest">{edited.type}</span>
+              <span className="text-slate-300">•</span>
+              <div className="flex items-center gap-2">
+                 <select 
+                   className="text-xs bg-white border border-indigo-200 rounded px-2 py-0.5 font-black text-indigo-700 outline-none"
+                   value={edited.level}
+                   onChange={(e) => setEdited({...edited, level: e.target.value})}
+                 >
+                   <option value="L1">L1 (Mudah)</option>
+                   <option value="L2">L2 (Sedang)</option>
+                   <option value="L3">L3 (HOTS)</option>
+                 </select>
+                 <button 
+                   onClick={handleAutoAnalyzeLevel}
+                   disabled={isAnalyzingLevel}
+                   className="text-[9px] font-black uppercase text-indigo-500 hover:text-indigo-700 flex items-center gap-1 transition-colors"
+                   title="Analisis Level via AI"
+                 >
+                   {isAnalyzingLevel ? (
+                     <div className="w-2 h-2 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+                   ) : '✨ Auto'}
+                 </button>
+              </div>
+            </div>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-white rounded-full transition-colors text-slate-400 hover:text-rose-500">
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
@@ -203,7 +258,6 @@ const QuestionEditor: React.FC<Props> = ({ question, onSave, onClose }) => {
                 <div className="space-y-4">
                   {edited.options.map((opt, i) => (
                     <div key={i} className="group bg-white p-4 rounded-xl border border-emerald-100 shadow-sm hover:shadow-md transition-all space-y-3 relative">
-                      {/* Tombol Hapus Opsi */}
                       <button 
                         type="button"
                         onClick={() => handleDeleteOption(i)}
@@ -234,7 +288,7 @@ const QuestionEditor: React.FC<Props> = ({ question, onSave, onClose }) => {
                                 type={edited.type === QuestionType.PilihanGanda ? "radio" : "checkbox"} 
                                 checked={
                                   Array.isArray(edited.correctAnswer) 
-                                    ? (typeof edited.correctAnswer[0] === 'boolean' ? edited.correctAnswer[i] as boolean : (edited.correctAnswer as number[]).includes(i))
+                                    ? (typeof edited.correctAnswer[0] === 'boolean' ? (edited.correctAnswer as boolean[])[i] : (edited.correctAnswer as number[]).includes(i))
                                     : edited.correctAnswer === i
                                 }
                                 onChange={() => handleCorrectAnswerChange(i)}
@@ -265,8 +319,19 @@ const QuestionEditor: React.FC<Props> = ({ question, onSave, onClose }) => {
             </div>
           </div>
 
-          <div className="p-6 bg-amber-50/50 rounded-2xl border border-amber-200">
-            <label className="block text-xs font-black text-amber-700 uppercase tracking-widest mb-3">Analisis Kunci & Pembahasan</label>
+          <div className="p-6 bg-amber-50/50 rounded-2xl border border-amber-200 space-y-3">
+            <div className="flex justify-between items-center">
+              <label className="block text-xs font-black text-amber-700 uppercase tracking-widest">Analisis Kunci & Pembahasan</label>
+              <button 
+                onClick={handleAutoGenerateExplanation}
+                disabled={isGeneratingExpl}
+                className="px-3 py-1 bg-amber-600 text-white rounded-lg text-[10px] font-black uppercase flex items-center gap-2 hover:bg-amber-700 transition-all shadow-md active:scale-95 disabled:bg-slate-400"
+              >
+                {isGeneratingExpl ? (
+                  <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                ) : '✨ Auto-Generate'}
+              </button>
+            </div>
             <textarea 
               rows={4}
               className="w-full p-4 rounded-xl border border-amber-200 bg-white text-sm outline-none focus:ring-2 focus:ring-amber-500 shadow-inner italic text-amber-900"

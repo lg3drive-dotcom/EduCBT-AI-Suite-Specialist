@@ -3,51 +3,35 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { EduCBTQuestion, GenerationConfig, QuestionType } from "./types";
 
 const SYSTEM_INSTRUCTION = `
-Persona: pakar kurikulum Indonesia & pengembang EduCBT.
-Tugas: Buat soal AKM/HOTS dalam JSON array yang valid.
+Persona: Pakar Kurikulum Nasional & Pengembang Sistem EduCBT Pro.
+Tugas: Membuat atau memperbaiki soal evaluasi pendidikan dalam format JSON array.
 
-### STANDAR OUTPUT JSON EDU-CBT PRO ###
+### ATURAN ANALISIS (SMART REPAIR) ###
+Jika Anda menerima soal dengan kolom kosong (Materi, Level, Pembahasan):
+1. MATERI: Dapatkan topik spesifik dari teks soal (Contoh: "Fotosintesis", "Persamaan Kuadrat").
+2. LEVEL: 
+   - L1: Mengingat/Memahami (Faktual).
+   - L2: Menerapkan (Prosedural).
+   - L3: Menganalisis/Mengevaluasi (HOTS/Penalaran).
+3. PEMBAHASAN: Wajib mendalam, menjelaskan langkah logika menuju jawaban benar. NO HTML.
 
-Setiap response WAJIB berupa ARRAY JSON. Gunakan standar value berikut:
+### STANDAR OUTPUT JSON ###
+Setiap response berupa ARRAY JSON dengan field:
+- "type": (Pilihan Ganda, Pilihan Jamak (MCMA), Pilihan Ganda Kompleks, Pilihan Ganda Kompleks (B/S), ISIAN, URAIAN)
+- "level": (L1, L2, L3)
+- "text": Teks soal (Plain Text)
+- "material": Materi soal
+- "explanation": Pembahasan kunci
+- "options": Array string (Kosongkan [] untuk ISIAN/URAIAN)
+- "correctAnswer": 
+  - PG: index (0,1,...)
+  - MCMA: array index ([0,2])
+  - B/S: array boolean ([true, false])
+  - ISIAN/URAIAN: string jawaban
+- "quizToken": Kode paket (Uppercase)
+- "order": Nomor urut
 
-1. "type": WAJIB menggunakan salah satu string ini:
-   - "Pilihan Ganda"
-   - "Pilihan Jamak (MCMA)"
-   - "Pilihan Ganda Kompleks"
-   - "Pilihan Ganda Kompleks (B/S)"
-
-2. "level": Gunakan kode ringkas ini:
-   - "L1" (Pengetahuan/Pemahaman)
-   - "L2" (Aplikasi)
-   - "L3" (Penalaran/HOTS)
-
-3. "correctAnswer":
-   - Jika "Pilihan Ganda": Berikan angka index (contoh: 0 atau 1 atau 2).
-   - Jika "Pilihan Jamak (MCMA)": Berikan array index (contoh: [0, 2]).
-   - Jika tipe Kompleks (B/S): Berikan array boolean (contoh: [true, false, true]).
-
-4. "tfLabels": (WAJIB untuk tipe B/S)
-   - Contoh: {"true": "Benar", "false": "Salah"} atau {"true": "Sesuai", "false": "Tidak Sesuai"}.
-
-5. "quizToken": Masukkan kode paket (Uppercase).
-
-6. "material": Masukkan indikator soal atau ringkasan materi.
-
-7. "explanation": Masukkan pembahasan kunci jawaban yang mendalam.
-
-8. "order": Nomor urut soal (Integer).
-
-### ATURAN FORMAT TEKS (PENTING!) ###
-- JANGAN GUNAKAN TAG HTML (seperti <p>, <br/>, <strong>, <b>, i, dll).
-- Gunakan TEKS BIASA (Plain Text). 
-- Untuk pemformatan baris baru, gunakan karakter newline (\n) standar.
-
-### ATURAN KHUSUS TIPE "Pilihan Ganda Kompleks (B/S)" ###
-- "options": Array berisi daftar pernyataan yang harus dievaluasi (minimal 3, maksimal 5).
-- "correctAnswer": Array boolean [true, false, ...] yang urutannya sesuai dengan "options".
-- "tfLabels": Objek wajib berisi {"true": "...", "false": "..."}.
-
-JANGAN gunakan field 'question', gunakan 'text'. JANGAN sertakan markdown code block di luar JSON string.
+JANGAN gunakan tag HTML. Gunakan \n untuk baris baru.
 `;
 
 const SINGLE_QUESTION_SCHEMA = {
@@ -67,8 +51,7 @@ const SINGLE_QUESTION_SCHEMA = {
       properties: {
         true: { type: Type.STRING },
         false: { type: Type.STRING }
-      },
-      required: ["true", "false"]
+      }
     }
   },
   required: ["type", "level", "text", "options", "correctAnswer", "explanation", "material", "quizToken", "order"]
@@ -141,9 +124,49 @@ export const generateEduCBTQuestions = async (config: GenerationConfig): Promise
   }
 };
 
-/**
- * NEW: Repair missing data in questions (Material, Level, Explanation)
- */
+// Fungsi baru untuk generate pembahasan saja
+export const generateExplanationForQuestion = async (q: EduCBTQuestion): Promise<string> => {
+  const prompt = `Hasilkan PEMBAHASAN MENDALAM untuk soal berikut:
+  SOAL: "${q.text}"
+  OPSI: ${JSON.stringify(q.options)}
+  KUNCI: ${JSON.stringify(q.correctAnswer)}
+  TIPE: ${q.type}
+  
+  Format jawaban: Berikan hanya teks pembahasan tanpa label "Pembahasan:". NO HTML.`;
+
+  try {
+    const response = await smartGeminiCall({
+      contents: prompt,
+      config: {
+        systemInstruction: "Anda adalah pakar edukasi. Berikan penjelasan logis dan mendidik."
+      }
+    });
+    return response.text?.trim() || "";
+  } catch (err) {
+    throw new Error("Gagal generate pembahasan.");
+  }
+};
+
+// Fungsi baru untuk analisis level saja
+export const analyzeLevelForQuestion = async (q: EduCBTQuestion): Promise<string> => {
+  const prompt = `Analisis LEVEL KOGNITIF (L1/L2/L3) soal berikut berdasarkan Taksonomi Bloom:
+  SOAL: "${q.text}"
+  Format jawaban: Hanya balas dengan "L1", "L2", atau "L3".`;
+
+  try {
+    const response = await smartGeminiCall({
+      contents: prompt,
+      config: {
+        systemInstruction: "Balas hanya dengan satu kode level: L1, L2, atau L3."
+      }
+    });
+    const result = response.text?.trim().toUpperCase();
+    return ["L1", "L2", "L3"].includes(result || "") ? (result || "L1") : "L1";
+  } catch (err) {
+    throw new Error("Gagal analisis level.");
+  }
+};
+
 export const repairQuestions = async (questions: EduCBTQuestion[]): Promise<EduCBTQuestion[]> => {
   const simplified = questions.map(q => ({
     id: q.id,
@@ -152,13 +175,18 @@ export const repairQuestions = async (questions: EduCBTQuestion[]): Promise<EduC
     options: q.options,
     material: q.material,
     level: q.level,
-    explanation: q.explanation
+    explanation: q.explanation,
+    correctAnswer: q.correctAnswer
   }));
 
-  const prompt = `LENGKAPI DATA KOSONG. 
-  Tinjau daftar soal berikut. Jika 'material', 'level', atau 'explanation' kosong atau tidak jelas, silakan isi/perbaiki secara cerdas berdasarkan konteks 'text' dan 'options'. 
-  Pastikan level (L1-L3) akurat sesuai taksonomi Bloom. NO HTML.
-  DATA: ${JSON.stringify(simplified)}`;
+  const prompt = `LENGKAPI & PERBAIKI DATA SOAL (SMART REPAIR). 
+  Tinjau daftar soal di bawah. Untuk setiap soal:
+  1. Jika 'material' berisi "Materi Belum Terisi" atau kosong, tentukan materi yang tepat berdasarkan teks.
+  2. Jika 'explanation' (pembahasan) kosong, buatkan penjelasan mendalam.
+  3. Validasi 'level' (L1-L3). Sesuaikan dengan kesulitan soal.
+  4. Pastikan 'type' sesuai dengan format soal tersebut.
+
+  DATA SOAL: ${JSON.stringify(simplified)}`;
 
   try {
     const response = await smartGeminiCall({
@@ -172,20 +200,24 @@ export const repairQuestions = async (questions: EduCBTQuestion[]): Promise<EduC
 
     const repairedData = JSON.parse(response.text || "[]");
     
-    // Merge back
     return questions.map(original => {
-      const repaired = repairedData.find((r: any) => r.id === original.id);
+      const repaired = repairedData.find((r: any) => 
+        r.text === original.text || (r.id && r.id === original.id)
+      );
+
       if (repaired) {
         return {
           ...original,
-          material: original.material || repaired.material,
-          level: (original.level && original.level !== "L1") ? original.level : (repaired.level || "L1"),
-          explanation: original.explanation || repaired.explanation
+          material: (!original.material || original.material === "Materi Belum Terisi") ? repaired.material : original.material,
+          level: (!original.level || original.level === "L1") ? (repaired.level || "L1") : original.level,
+          explanation: !original.explanation ? repaired.explanation : original.explanation,
+          type: original.type === "Tipe Tidak Diketahui" ? repaired.type : original.type
         };
       }
       return original;
     });
   } catch (err) {
+    console.error("Repair error:", err);
     throw new Error("Gagal melengkapi data via AI.");
   }
 };
@@ -272,7 +304,9 @@ const normalizeQuestion = (q: any, config: any): EduCBTQuestion => {
       }
     } else if (trimmed.toLowerCase() === 'true') { correctedAnswer = true; }
     else if (trimmed.toLowerCase() === 'false') { correctedAnswer = false; }
-    else if (!isNaN(parseInt(trimmed))) { correctedAnswer = parseInt(trimmed); }
+    else if (!isNaN(parseInt(trimmed)) && q.type !== QuestionType.Isian && q.type !== QuestionType.Uraian) { 
+      correctedAnswer = parseInt(trimmed); 
+    }
   }
 
   if (q.type === QuestionType.PilihanGanda && typeof correctedAnswer !== 'number') {
@@ -281,7 +315,7 @@ const normalizeQuestion = (q: any, config: any): EduCBTQuestion => {
 
   if (q.type === QuestionType.KompleksBS) {
     if (!Array.isArray(correctedAnswer)) correctedAnswer = q.options?.map(() => false) || [];
-    correctedAnswer = (correctedAnswer as any[]).map(val => val === true || val === "true");
+    correctedAnswer = (correctedAnswer as any[]).map(val => val === true || val === "true" || val === 1);
     if (!q.tfLabels) q.tfLabels = { "true": "Benar", "false": "Salah" };
   }
 
