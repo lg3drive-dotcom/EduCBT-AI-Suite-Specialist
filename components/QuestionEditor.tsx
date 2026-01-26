@@ -28,14 +28,17 @@ const QuestionEditor: React.FC<Props> = ({ question, onSave, onClose }) => {
     setEdited({ ...edited, optionImages: newOptionImages });
   };
 
+  // Add a new option and initialize its correct answer state correctly based on question type
   const handleAddOption = () => {
     if (edited.options.length >= 10) return;
     const newOptions = [...edited.options, ""];
     const newOptionImages = [...(edited.optionImages || []), null];
     
     let newCorrectAnswer = edited.correctAnswer;
+    // Fix: Explicitly cast to boolean[] when adding a new option for complex types to prevent mixed-type array errors
     if (edited.type === QuestionType.Kompleks || edited.type === QuestionType.KompleksBS) {
-      newCorrectAnswer = [...(Array.isArray(edited.correctAnswer) ? edited.correctAnswer : []), false];
+      const current = Array.isArray(edited.correctAnswer) ? (edited.correctAnswer as boolean[]) : [];
+      newCorrectAnswer = [...current, false];
     }
 
     setEdited({ 
@@ -46,6 +49,7 @@ const QuestionEditor: React.FC<Props> = ({ question, onSave, onClose }) => {
     });
   };
 
+  // Remove an option and correctly synchronize the correct answer state indices/values
   const handleDeleteOption = (idx: number) => {
     if (edited.options.length <= 2) {
       alert("Minimal harus ada 2 opsi jawaban.");
@@ -79,6 +83,7 @@ const QuestionEditor: React.FC<Props> = ({ question, onSave, onClose }) => {
       }
     } else if (edited.type === QuestionType.Kompleks || edited.type === QuestionType.KompleksBS) {
       if (Array.isArray(newCorrectAnswer)) {
+        // Fix: Explicitly cast to boolean[] before splicing to maintain array type integrity
         const updated = [...(newCorrectAnswer as boolean[])];
         updated.splice(idx, 1);
         newCorrectAnswer = updated;

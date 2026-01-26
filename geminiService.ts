@@ -80,13 +80,13 @@ const QUESTIONS_ARRAY_SCHEMA = {
 };
 
 /**
- * Enhanced API Caller with Fallback and Retry
+ * Enhanced API Caller with Fallback and Retry for Text-based generation
  */
 async function smartGeminiCall(payload: any, maxRetries = 3) {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   let lastError: any;
   
-  // Model priorities
+  // Model priorities for standard text tasks
   const models = ['gemini-3-pro-preview', 'gemini-3-flash-preview'];
 
   for (const modelName of models) {
@@ -270,12 +270,36 @@ const normalizeQuestion = (q: any, config: any): EduCBTQuestion => {
   };
 };
 
+/**
+ * Generates an educational illustration using the correct multimodal Gemini model
+ */
 export const generateImage = async (prompt: string): Promise<string> => {
   try {
-    const response = await smartGeminiCall({
-      contents: { parts: [{ text: `High quality educational illustration: ${prompt}` }] }
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    // Use gemini-2.5-flash-image for standard image generation tasks as per instructions
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash-image',
+      contents: {
+        parts: [
+          {
+            text: `Create a high quality, clear educational illustration for a test question: ${prompt}`,
+          },
+        ],
+      },
     });
-    const imgPart = response.candidates?.[0]?.content?.parts.find(p => p.inlineData);
-    return imgPart?.inlineData ? `data:image/png;base64,${imgPart.inlineData.data}` : "";
-  } catch (error) { return ""; }
+
+    // Extract the image data from the response candidates
+    if (response.candidates && response.candidates[0].content.parts) {
+      for (const part of response.candidates[0].content.parts) {
+        if (part.inlineData) {
+          const base64EncodeString: string = part.inlineData.data;
+          return `data:image/png;base64,${base64EncodeString}`;
+        }
+      }
+    }
+    return "";
+  } catch (error) { 
+    console.error("Image generation error:", error);
+    return ""; 
+  }
 };

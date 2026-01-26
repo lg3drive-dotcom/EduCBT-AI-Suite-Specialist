@@ -1,6 +1,48 @@
 
 import { EduCBTQuestion, QuestionType } from "../types";
 
+// ... (keep existing functions)
+
+export const downloadExcelTemplate = () => {
+  // @ts-ignore
+  const XLSX = window.XLSX;
+  const wb = XLSX.utils.book_new();
+
+  // Sheet 1: Format Soal
+  const headers = [
+    ["No", "Tipe Soal", "Level", "Materi", "Teks Soal", "Opsi A", "Opsi B", "Opsi C", "Opsi D", "Opsi E", "Kunci Jawaban", "Pembahasan", "Token Paket"]
+  ];
+  const sampleData = [
+    [1, "Pilihan Ganda", "L1", "Ekosistem", "Apa peran produsen?", "Makan", "Buat makanan", "Urai", "Parasit", "", "B", "Tumbuhan buat makanan sendiri", "IPA-01"],
+    [2, "Pilihan Jamak (MCMA)", "L2", "Sistem Tubuh", "Mana yang organ pernapasan?", "Paru-paru", "Jantung", "Hidung", "Lambung", "", "A, C", "Paru dan hidung alat napas", "IPA-01"],
+    [3, "Pilihan Ganda Kompleks (B/S)", "L3", "Matematika", "2+2=4", "Pernyataan 1", "Pernyataan 2", "Pernyataan 3", "", "", "B, S, B", "Penjelasan logis", "MAT-01"]
+  ];
+  
+  const wsSoal = XLSX.utils.aoa_to_sheet([...headers, ...sampleData]);
+  XLSX.utils.book_append_sheet(wb, wsSoal, "Format Soal");
+
+  // Sheet 2: Panduan
+  const guide = [
+    ["PANDUAN PENGISIAN TEMPLATE SOAL EDUCBT"],
+    [""],
+    ["KOLOM", "INSTRUKSI PENGISIAN"],
+    ["Tipe Soal", "Wajib diisi: 'Pilihan Ganda', 'Pilihan Jamak (MCMA)', 'Pilihan Ganda Kompleks', 'Pilihan Ganda Kompleks (B/S)', 'ISIAN', atau 'URAIAN'"],
+    ["Level", "Wajib diisi: 'L1', 'L2', atau 'L3'"],
+    ["Opsi A-E", "Isi teks pilihan jawaban. Kosongkan jika tidak diperlukan (misal Isian/Uraian)"],
+    ["Kunci Jawaban", "PENTING: FORMAT HARUS SESUAI TIPE"],
+    ["- Pilihan Ganda", "Isi dengan huruf: A / B / C / D / E"],
+    ["- Pilihan Jamak (MCMA)", "Isi dengan huruf dipisah koma: A, C, D"],
+    ["- Kompleks (B/S)", "Isi dengan B (Benar) atau S (Salah) dipisah koma: B, S, B, B"],
+    ["- Isian/Uraian", "Isi teks kunci jawaban atau jawaban singkat"],
+    [""],
+    ["TIPS", "Jangan mengubah urutan kolom. Pastikan tidak ada simbol aneh di Tipe Soal."]
+  ];
+  const wsGuide = XLSX.utils.aoa_to_sheet(guide);
+  XLSX.utils.book_append_sheet(wb, wsGuide, "Panduan");
+
+  XLSX.writeFile(wb, "Template_Soal_EduCBT.xlsx");
+};
+
 const getSoalHtml = (questions: EduCBTQuestion[]) => {
   const firstQ = questions[0];
   const isMultiChoice = (q: EduCBTQuestion) => {

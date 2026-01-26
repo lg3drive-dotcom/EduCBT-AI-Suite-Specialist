@@ -1,6 +1,7 @@
 
 import React, { useState } from 'react';
 import { GenerationConfig, QuestionType, EduCBTQuestion } from '../types';
+import { downloadExcelTemplate } from '../utils/exportUtils';
 
 interface Props {
   onGenerate: (config: GenerationConfig) => void;
@@ -41,6 +42,87 @@ const GenerationForm: React.FC<Props> = ({ onGenerate, onImportJson, isLoading }
     'Fase D': '(Kelas 7-9 SMP)',
     'Fase E': '(Kelas 10 SMA)',
     'Fase F': '(Kelas 11-12 SMA)',
+  };
+
+  const parseExcelQuestions = (data: any[]): EduCBTQuestion[] => {
+    return data.map((row, i) => {
+      const tipe = (row["Tipe Soal"] || row["Tipe"] || row["tipe"] || "Pilihan Ganda").toString();
+      const level = (row["Level"] || row["level"] || "L1").toString();
+      const teks = (row["Teks Soal"] || row["Soal"] || row["soal"] || "").toString();
+      const material = (row["Materi"] || row["materi"] || "").toString();
+      const explanation = (row["Pembahasan"] || row["penjelasan"] || "").toString();
+      const token = (row["Token Paket"] || row["Token"] || row["token"] || "").toString();
+      
+      const options = [
+        row["Opsi A"], row["Opsi B"], row["Opsi C"], row["Opsi D"], row["Opsi E"]
+      ].filter(o => o !== undefined && o !== null && o !== "").map(o => o.toString());
+
+      let kunci = (row["Kunci Jawaban"] || row["Kunci"] || row["kunci"] || "").toString();
+      let correctAnswer: any = 0;
+
+      // Normalisasi Kunci Jawaban
+      if (tipe === QuestionType.PilihanGanda) {
+        correctAnswer = (kunci.charCodeAt(0) - 65); // A=0, B=1, dst
+        if (isNaN(correctAnswer) || correctAnswer < 0) correctAnswer = 0;
+      } else if (tipe === QuestionType.MCMA) {
+        correctAnswer = kunci.split(/[,;|]/).map(k => k.trim().toUpperCase().charCodeAt(0) - 65).filter(n => !isNaN(n) && n >= 0);
+      } else if (tipe === QuestionType.KompleksBS) {
+        correctAnswer = kunci.split(/[,;|]/).map(k => {
+          const val = k.trim().toUpperCase();
+          return val === 'B' || val === 'TRUE' || val === 'BENAR' || val === 'S' ? (val !== 'S') : false;
+        });
+      } else {
+        correctAnswer = kunci;
+      }
+
+      return {
+        id: `xl_${Date.now()}_${i}`,
+        type: tipe,
+        level: level,
+        subject: formData.subject,
+        phase: formData.phase,
+        material: material,
+        text: teks,
+        explanation: explanation,
+        options: options,
+        correctAnswer: correctAnswer,
+        isDeleted: false,
+        createdAt: Date.now(),
+        order: parseInt(row["No"]) || (i + 1),
+        quizToken: token || formData.quizToken,
+        tfLabels: tipe === QuestionType.KompleksBS ? { true: 'Benar', false: 'Salah' } : undefined
+      };
+    });
+  };
+
+  const handleExcelImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        // @ts-ignore
+        const bstr = evt.target.result;
+        // @ts-ignore
+        const wb = window.XLSX.read(bstr, { type: 'binary' });
+        const wsname = wb.SheetNames[0];
+        const ws = wb.Sheets[wsname];
+        // @ts-ignore
+        const data = window.XLSX.utils.sheet_to_json(ws);
+        
+        const imported = parseExcelQuestions(data);
+        if (imported.length > 0) {
+          onImportJson(imported);
+          alert(`${imported.length} soal dari Excel berhasil diimport.`);
+        }
+      } catch (err) {
+        console.error(err);
+        alert("Gagal membaca file Excel. Pastikan format kolom sesuai template.");
+      }
+    };
+    reader.readAsBinaryString(file);
+    e.target.value = '';
   };
 
   const handleJsonUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -188,15 +270,31 @@ const GenerationForm: React.FC<Props> = ({ onGenerate, onImportJson, isLoading }
 
   return (
     <form onSubmit={handleSubmit} className="bg-white p-5 rounded-2xl border-2 border-blue-100 shadow-xl space-y-6">
-      <div className="flex gap-2 mb-2">
-        <label className="flex-1 flex items-center justify-center gap-2 py-3 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl cursor-pointer transition-all border border-slate-200">
-           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1M5 19h14a2 2 0 002-2v-5a2 2 0 00-2-2H9l-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
-           <div className="flex flex-col">
-             <span className="text-[10px] font-black uppercase tracking-widest leading-none">Buka File JSON</span>
-             <span className="text-[8px] font-bold text-slate-400 mt-0.5">(Bisa Pilih Banyak)</span>
-           </div>
-           <input type="file" className="hidden" accept=".json" multiple onChange={handleJsonUpload} />
-        </label>
+      <div className="space-y-2">
+        <div className="flex gap-2">
+          <label className="flex-1 flex items-center justify-center gap-2 py-3 px-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl cursor-pointer transition-all border border-slate-200">
+             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1M5 19h14a2 2 0 002-2v-5a2 2 0 00-2-2H9l-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
+             <div className="flex flex-col">
+               <span className="text-[10px] font-black uppercase tracking-widest leading-none">Buka JSON</span>
+             </div>
+             <input type="file" className="hidden" accept=".json" multiple onChange={handleJsonUpload} />
+          </label>
+          <label className="flex-1 flex items-center justify-center gap-2 py-3 px-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl cursor-pointer transition-all border border-emerald-200">
+             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+             <div className="flex flex-col">
+               <span className="text-[10px] font-black uppercase tracking-widest leading-none">Import Excel</span>
+             </div>
+             <input type="file" className="hidden" accept=".xlsx, .xls, .csv" onChange={handleExcelImport} />
+          </label>
+        </div>
+        <button 
+          type="button"
+          onClick={downloadExcelTemplate}
+          className="w-full flex items-center justify-center gap-2 py-2 text-[9px] font-black uppercase text-indigo-500 hover:text-indigo-700 transition-colors"
+        >
+          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" /></svg>
+          Unduh Template Excel
+        </button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
