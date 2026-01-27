@@ -9,7 +9,7 @@ Tugas: Membuat atau memperbaiki soal evaluasi pendidikan dalam format JSON array
 ### ATURAN ANALISIS (SMART REPAIR) ###
 1. MATERI: Dapatkan topik spesifik dari teks soal.
 2. LEVEL: L1 (Faktual), L2 (Aplikasi), L3 (Penalaran/HOTS).
-3. PEMBAHASAN: Penjelasan logis menuju jawaban benar. 
+3. PEMBAHASAN: Penjelasan logis menuju jawaban benar. BUAT SINGKAT, PADAT, DAN JELAS (Maksimal 2-3 kalimat).
 
 ### ATURAN FORMAT PENTING ###
 - JANGAN gunakan tag HTML.
@@ -102,6 +102,7 @@ export const generateEduCBTQuestions = async (config: GenerationConfig): Promise
   const prompt = `Buat ${total} soal ${config.subject}. Materi: ${config.material}. 
   Komposisi: ${typeRequirements} & ${levelRequirements}. Token: ${config.quizToken}.
   ${config.referenceText ? `Referensi: ${config.referenceText.substring(0, 3000)}` : ''}
+  Instruksi Pembahasan: Buat SINGKAT, PADAT, dan JELAS (Maks 2-3 kalimat).
   Output PLAIN TEXT (No HTML, No Markdown symbols like **).`;
 
   try {
@@ -122,19 +123,19 @@ export const generateEduCBTQuestions = async (config: GenerationConfig): Promise
 };
 
 export const generateExplanationForQuestion = async (q: EduCBTQuestion): Promise<string> => {
-  const prompt = `Hasilkan PEMBAHASAN MENDALAM untuk soal berikut dalam format teks polos (TANPA simbol markdown seperti ** atau *):
+  const prompt = `Hasilkan PEMBAHASAN SINGKAT, PADAT, DAN JELAS untuk soal berikut dalam format teks polos (TANPA simbol markdown seperti ** atau *):
   SOAL: "${q.text}"
   OPSI: ${JSON.stringify(q.options)}
   KUNCI: ${JSON.stringify(q.correctAnswer)}
   TIPE: ${q.type}
   
-  Format jawaban: Berikan hanya teks pembahasan tanpa label "Pembahasan:". JANGAN gunakan penebalan atau list markdown.`;
+  Format jawaban: Berikan hanya teks pembahasan tanpa label "Pembahasan:". Maksimal 2 kalimat saja. JANGAN gunakan penebalan atau list markdown.`;
 
   try {
     const response = await smartGeminiCall({
       contents: prompt,
       config: {
-        systemInstruction: "Anda adalah pakar edukasi. Berikan penjelasan logis dan mendidik dalam teks polos murni (Plain Text)."
+        systemInstruction: "Anda adalah pakar edukasi. Berikan penjelasan logis yang singkat dan mendidik dalam teks polos murni (Plain Text)."
       }
     });
     return cleanFormatting(response.text || "");
@@ -177,7 +178,7 @@ export const repairQuestions = async (questions: EduCBTQuestion[]): Promise<EduC
   const prompt = `LENGKAPI & PERBAIKI DATA SOAL (SMART REPAIR). 
   Tinjau daftar soal di bawah. Untuk setiap soal:
   1. Jika 'material' kosong, tentukan materi yang tepat.
-  2. Jika 'explanation' (pembahasan) kosong, buatkan penjelasan mendalam TANPA simbol markdown.
+  2. Jika 'explanation' (pembahasan) kosong, buatkan penjelasan SINGKAT & PADAT TANPA simbol markdown.
   3. Validasi 'level' (L1-L3).
   4. Pastikan 'type' sesuai.
 
