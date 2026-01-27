@@ -124,6 +124,13 @@ const QuestionEditor: React.FC<Props> = ({ question, onSave, onClose }) => {
     });
   };
 
+  const applyLabelPreset = (t: string, f: string) => {
+    setEdited({
+      ...edited,
+      tfLabels: { true: t, false: f }
+    });
+  };
+
   const handleAutoGenerateExplanation = async () => {
     if (!edited.text) {
       alert("Teks soal tidak boleh kosong untuk membuat pembahasan.");
@@ -196,6 +203,56 @@ const QuestionEditor: React.FC<Props> = ({ question, onSave, onClose }) => {
         </div>
 
         <div className="flex-grow overflow-y-auto p-8 space-y-8 bg-white">
+          {isBS && (
+            <div className="bg-purple-50 p-6 rounded-2xl border border-purple-200 space-y-4">
+              <div className="flex items-center justify-between">
+                <label className="block text-xs font-black text-purple-900 uppercase tracking-widest">Pengaturan Label (B/S)</label>
+                <div className="flex gap-2">
+                  <button 
+                    onClick={() => applyLabelPreset('Benar', 'Salah')}
+                    className="px-3 py-1 bg-white border border-purple-300 rounded-lg text-[10px] font-black uppercase text-purple-700 hover:bg-purple-100 transition-colors"
+                  >
+                    Benar / Salah
+                  </button>
+                  <button 
+                    onClick={() => applyLabelPreset('Sesuai', 'Tidak Sesuai')}
+                    className="px-3 py-1 bg-white border border-purple-300 rounded-lg text-[10px] font-black uppercase text-purple-700 hover:bg-purple-100 transition-colors"
+                  >
+                    Sesuai / Tidak Sesuai
+                  </button>
+                  <button 
+                    onClick={() => applyLabelPreset('Ya', 'Tidak')}
+                    className="px-3 py-1 bg-white border border-purple-300 rounded-lg text-[10px] font-black uppercase text-purple-700 hover:bg-purple-100 transition-colors"
+                  >
+                    Ya / Tidak
+                  </button>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] font-black text-purple-700 uppercase mb-1">Label Nilai TRUE (B)</label>
+                  <input 
+                    type="text" 
+                    className="w-full px-3 py-2 rounded-lg border border-purple-300 text-sm font-bold focus:ring-2 focus:ring-purple-400 outline-none"
+                    value={edited.tfLabels?.true}
+                    onChange={(e) => handleTfLabelChange('true', e.target.value)}
+                    placeholder="Contoh: Benar"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-purple-700 uppercase mb-1">Label Nilai FALSE (S)</label>
+                  <input 
+                    type="text" 
+                    className="w-full px-3 py-2 rounded-lg border border-purple-300 text-sm font-bold focus:ring-2 focus:ring-purple-400 outline-none"
+                    value={edited.tfLabels?.false}
+                    onChange={(e) => handleTfLabelChange('false', e.target.value)}
+                    placeholder="Contoh: Salah"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
             <div className="lg:col-span-7 space-y-6">
               <div className="bg-blue-50/30 p-5 rounded-2xl border border-blue-100">
