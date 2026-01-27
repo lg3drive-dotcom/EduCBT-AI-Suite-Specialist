@@ -105,6 +105,69 @@ export const downloadExcelTemplate = () => {
   XLSX.writeFile(wb, "Template_Soal_EduCBT_Pro_Lengkap.xlsx");
 };
 
+export const exportQuestionsToExcel = (questions: EduCBTQuestion[]) => {
+  if (!questions || questions.length === 0) return;
+  // @ts-ignore
+  const XLSX = window.XLSX;
+  const wb = XLSX.utils.book_new();
+
+  const headers = [
+    "No", "Tipe Soal", "Level", "Materi", "Teks Soal", "Gambar Soal (URL)",
+    "Opsi A", "Gambar Opsi A (URL)", 
+    "Opsi B", "Gambar Opsi B (URL)",
+    "Opsi C", "Gambar Opsi C (URL)",
+    "Opsi D", "Gambar Opsi D (URL)",
+    "Opsi E", "Gambar Opsi E (URL)",
+    "Kunci Jawaban", "Pembahasan", "Token Paket"
+  ];
+
+  const rows = questions.map((q, idx) => {
+    let kunci = "";
+    if (q.type === QuestionType.PilihanGanda) {
+      if (typeof q.correctAnswer === 'number') {
+        kunci = String.fromCharCode(65 + q.correctAnswer);
+      }
+    } else if (q.type === QuestionType.MCMA) {
+      if (Array.isArray(q.correctAnswer)) {
+        kunci = (q.correctAnswer as number[]).map(i => String.fromCharCode(65 + i)).join(", ");
+      }
+    } else if (q.type === QuestionType.Kompleks) {
+      if (Array.isArray(q.correctAnswer)) {
+        kunci = (q.correctAnswer as boolean[]).map((b, i) => b ? String.fromCharCode(65 + i) : null).filter(x => x).join(", ");
+      }
+    } else if (q.type === QuestionType.KompleksBS) {
+      if (Array.isArray(q.correctAnswer)) {
+        kunci = (q.correctAnswer as boolean[]).map(b => b ? 'B' : 'S').join(", ");
+      }
+    } else {
+      kunci = String(q.correctAnswer || "");
+    }
+
+    return [
+      q.order || (idx + 1),
+      q.type,
+      q.level,
+      q.material || "",
+      q.text || "",
+      q.image || "",
+      q.options[0] || "", q.optionImages?.[0] || "",
+      q.options[1] || "", q.optionImages?.[1] || "",
+      q.options[2] || "", q.optionImages?.[2] || "",
+      q.options[3] || "", q.optionImages?.[3] || "",
+      q.options[4] || "", q.optionImages?.[4] || "",
+      kunci,
+      q.explanation || "",
+      q.quizToken || ""
+    ];
+  });
+
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+  XLSX.utils.book_append_sheet(wb, ws, "Daftar Soal");
+
+  const safeSubject = (questions[0]?.subject || 'Export').toString().replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, '_');
+  XLSX.writeFile(wb, `Export_Soal_${safeSubject}_${Date.now()}.xlsx`);
+};
+
 const getSoalHtml = (questions: EduCBTQuestion[]) => {
   const firstQ = questions[0];
   const isMultiChoice = (q: EduCBTQuestion) => {

@@ -6,8 +6,8 @@ import QuestionList from './components/QuestionList';
 import JsonPreview from './components/JsonPreview';
 import QuestionEditor from './components/QuestionEditor';
 import { EduCBTQuestion, GenerationConfig, QuestionType } from './types';
-import { generateEduCBTQuestions, regenerateSingleQuestion, changeQuestionType, repairQuestions } from './geminiService';
-import { downloadSoalDoc, downloadKisiKisiDoc, downloadSoalPdf, downloadKisiKisiPdf } from './utils/exportUtils';
+import { generateEduCBTQuestions, regenerateSingleQuestion, repairQuestions } from './geminiService';
+import { downloadSoalDoc, downloadKisiKisiDoc, downloadSoalPdf, downloadKisiKisiPdf, exportQuestionsToExcel } from './utils/exportUtils';
 
 const App: React.FC = () => {
   const [questions, setQuestions] = useState<EduCBTQuestion[]>([]);
@@ -106,17 +106,61 @@ const App: React.FC = () => {
     }
   };
 
-  const handleChangeType = async (id: string, newType: QuestionType) => {
-    const target = questions.find(q => q.id === id);
-    if (!target) return;
-    setQuestions(prev => prev.map(q => q.id === id ? { ...q, isRegenerating: true } : q));
-    try {
-      const updatedQuestion = await changeQuestionType(target, newType);
-      setQuestions(prev => prev.map(q => q.id === id ? { ...updatedQuestion, isRegenerating: false } : q));
-    } catch (err) {
-      alert("Gagal mengubah tipe soal.");
-      setQuestions(prev => prev.map(q => q.id === id ? { ...q, isRegenerating: false } : q));
-    }
+  const handleChangeType = (id: string, newType: QuestionType) => {
+    setQuestions(prev => prev.map(q => {
+      if (q.id === id) {
+        let newCorrectAnswer = q.correctAnswer;
+        let newTfLabels = q.tfLabels;
+
+        // Transformasi Kunci Jawaban secara Logis tanpa merusak Teks/Opsi
+        if (newType === QuestionType.PilihanGanda) {
+          if (Array.isArray(q.correctAnswer)) {
+             const firstIndex = q.correctAnswer.findIndex(v => v === true || typeof v === 'number');
+             newCorrectAnswer = firstIndex !== -1 ? firstIndex : 0;
+          } else if (typeof q.correctAnswer !== 'number') {
+             newCorrectAnswer = 0;
+          }
+        } 
+        else if (newType === QuestionType.MCMA) {
+          if (!Array.isArray(q.correctAnswer)) {
+            newCorrectAnswer = [typeof q.correctAnswer === 'number' ? q.correctAnswer : 0];
+          } else {
+            // Jika sebelumnya Kompleks (bool[]), ubah ke index[]
+            if (typeof q.correctAnswer[0] === 'boolean') {
+               newCorrectAnswer = (q.correctAnswer as boolean[]).map((v, i) => v ? i : -1).filter(i => i !== -1);
+            }
+          }
+        }
+        else if (newType === QuestionType.Kompleks || newType === QuestionType.KompleksBS) {
+          if (!Array.isArray(q.correctAnswer)) {
+            const arr = q.options.map(() => false);
+            if (typeof q.correctAnswer === 'number' && q.correctAnswer < arr.length) {
+              arr[q.correctAnswer] = true;
+            }
+            newCorrectAnswer = arr;
+          } else if (typeof q.correctAnswer[0] === 'number') {
+             const arr = q.options.map(() => false);
+             (q.correctAnswer as number[]).forEach(idx => { if (idx < arr.length) arr[idx] = true; });
+             newCorrectAnswer = arr;
+          }
+
+          if (newType === QuestionType.KompleksBS && !newTfLabels) {
+            newTfLabels = { true: 'Benar', false: 'Salah' };
+          }
+        }
+        else if (newType === QuestionType.Isian || newType === QuestionType.Uraian) {
+          newCorrectAnswer = "";
+        }
+
+        return { 
+          ...q, 
+          type: newType, 
+          correctAnswer: newCorrectAnswer,
+          tfLabels: newTfLabels
+        };
+      }
+      return q;
+    }));
   };
 
   const handleUpdateQuestion = (updated: EduCBTQuestion) => {
@@ -202,6 +246,10 @@ const App: React.FC = () => {
                         className="px-3 py-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg text-[10px] font-black uppercase hover:bg-emerald-100 transition-colors"
                       >
                         Auto-Urut
+                      </button>
+                      <button onClick={() => exportQuestionsToExcel(activeQuestions)} className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-[10px] font-black uppercase flex items-center gap-2 shadow-emerald-200 shadow-lg">
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0L8 8m4-4v12" /></svg>
+                        Export Excel
                       </button>
                       <button onClick={() => downloadSoalPdf(activeQuestions)} className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-[10px] font-black uppercase">Download PDF</button>
                     </div>

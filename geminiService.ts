@@ -217,43 +217,6 @@ export const repairQuestions = async (questions: EduCBTQuestion[]): Promise<EduC
   }
 };
 
-export const changeQuestionType = async (oldQuestion: EduCBTQuestion, newType: QuestionType): Promise<EduCBTQuestion> => {
-  const prompt = `UBAH TIPE SOAL. TOKEN TETAP: ${oldQuestion.quizToken}
-  SOAL: "${oldQuestion.text}"
-  TIPE BARU: ${newType}
-  GUNAKAN "quizToken": "${oldQuestion.quizToken}" dalam JSON. NO HTML. NO MARKDOWN SYMBOLS.`;
-
-  try {
-    const response = await smartGeminiCall({
-      contents: prompt,
-      config: {
-        systemInstruction: SYSTEM_INSTRUCTION,
-        responseMimeType: "application/json",
-        responseSchema: SINGLE_QUESTION_SCHEMA
-      }
-    });
-
-    const parsed = JSON.parse(response.text || "{}");
-    const normalized = normalizeQuestion({ 
-      ...parsed, 
-      id: oldQuestion.id, 
-      order: oldQuestion.order,
-      type: newType 
-    }, {
-      subject: oldQuestion.subject,
-      phase: oldQuestion.phase,
-      material: oldQuestion.material,
-      quizToken: oldQuestion.quizToken,
-      typeCounts: {},
-      levelCounts: {}
-    });
-
-    return { ...normalized, quizToken: oldQuestion.quizToken };
-  } catch (error) {
-    throw new Error("Gagal mengubah tipe soal.");
-  }
-};
-
 export const regenerateSingleQuestion = async (oldQuestion: EduCBTQuestion, customInstructions?: string): Promise<EduCBTQuestion> => {
   const prompt = `REGENERASI SOAL. TOKEN TETAP: ${oldQuestion.quizToken}
   MATERI: ${oldQuestion.material}
