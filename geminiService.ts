@@ -7,31 +7,16 @@ Persona: Pakar Kurikulum Nasional & Pengembang Sistem EduCBT Pro.
 Tugas: Membuat atau memperbaiki soal evaluasi pendidikan dalam format JSON array.
 
 ### ATURAN ANALISIS (SMART REPAIR) ###
-Jika Anda menerima soal dengan kolom kosong (Materi, Level, Pembahasan):
-1. MATERI: Dapatkan topik spesifik dari teks soal (Contoh: "Fotosintesis", "Persamaan Kuadrat").
-2. LEVEL: 
-   - L1: Mengingat/Memahami (Faktual).
-   - L2: Menerapkan (Prosedural).
-   - L3: Menganalisis/Mengevaluasi (HOTS/Penalaran).
-3. PEMBAHASAN: Wajib mendalam, menjelaskan langkah logika menuju jawaban benar. NO HTML.
+1. MATERI: Dapatkan topik spesifik dari teks soal.
+2. LEVEL: L1 (Faktual), L2 (Aplikasi), L3 (Penalaran/HOTS).
+3. PEMBAHASAN: Penjelasan logis menuju jawaban benar. 
 
-### STANDAR OUTPUT JSON ###
-Setiap response berupa ARRAY JSON dengan field:
-- "type": (Pilihan Ganda, Pilihan Jamak (MCMA), Pilihan Ganda Kompleks, Pilihan Ganda Kompleks (B/S), ISIAN, URAIAN)
-- "level": (L1, L2, L3)
-- "text": Teks soal (Plain Text)
-- "material": Materi soal
-- "explanation": Pembahasan kunci
-- "options": Array string (Kosongkan [] untuk ISIAN/URAIAN)
-- "correctAnswer": 
-  - PG: index (0,1,...)
-  - MCMA: array index ([0,2])
-  - B/S: array boolean ([true, false])
-  - ISIAN/URAIAN: string jawaban
-- "quizToken": Kode paket (Uppercase)
-- "order": Nomor urut
-
-JANGAN gunakan tag HTML. Gunakan \n untuk baris baru.
+### ATURAN FORMAT PENTING ###
+- JANGAN gunakan tag HTML.
+- JANGAN gunakan simbol Markdown seperti asterisks (**) atau (__) untuk penebalan.
+- JANGAN gunakan simbol markdown untuk list seperti '-' atau '*'.
+- Gunakan teks polos (Plain Text) murni. Gunakan \n untuk baris baru jika diperlukan.
+- Jika ada penomoran, gunakan angka biasa (1., 2., dst).
 `;
 
 const SINGLE_QUESTION_SCHEMA = {
@@ -60,6 +45,18 @@ const SINGLE_QUESTION_SCHEMA = {
 const QUESTIONS_ARRAY_SCHEMA = {
   type: Type.ARRAY,
   items: SINGLE_QUESTION_SCHEMA
+};
+
+const cleanFormatting = (str: string) => {
+  if (!str) return "";
+  return str
+    .replace(/<[^>]*>?/gm, '') // Hapus HTML
+    .replace(/\*\*/g, '')      // Hapus Double Asterisks (Bold)
+    .replace(/\*/g, '')        // Hapus Single Asterisks
+    .replace(/__/g, '')        // Hapus Double Underscore
+    .replace(/#{1,6}\s?/g, '') // Hapus Header Markdown
+    .replace(/`{1,3}/g, '')    // Hapus Code Blocks
+    .trim();
 };
 
 async function smartGeminiCall(payload: any, maxRetries = 3) {
@@ -105,7 +102,7 @@ export const generateEduCBTQuestions = async (config: GenerationConfig): Promise
   const prompt = `Buat ${total} soal ${config.subject}. Materi: ${config.material}. 
   Komposisi: ${typeRequirements} & ${levelRequirements}. Token: ${config.quizToken}.
   ${config.referenceText ? `Referensi: ${config.referenceText.substring(0, 3000)}` : ''}
-  Output PLAIN TEXT (No HTML).`;
+  Output PLAIN TEXT (No HTML, No Markdown symbols like **).`;
 
   try {
     const response = await smartGeminiCall({
@@ -124,30 +121,28 @@ export const generateEduCBTQuestions = async (config: GenerationConfig): Promise
   }
 };
 
-// Fungsi baru untuk generate pembahasan saja
 export const generateExplanationForQuestion = async (q: EduCBTQuestion): Promise<string> => {
-  const prompt = `Hasilkan PEMBAHASAN MENDALAM untuk soal berikut:
+  const prompt = `Hasilkan PEMBAHASAN MENDALAM untuk soal berikut dalam format teks polos (TANPA simbol markdown seperti ** atau *):
   SOAL: "${q.text}"
   OPSI: ${JSON.stringify(q.options)}
   KUNCI: ${JSON.stringify(q.correctAnswer)}
   TIPE: ${q.type}
   
-  Format jawaban: Berikan hanya teks pembahasan tanpa label "Pembahasan:". NO HTML.`;
+  Format jawaban: Berikan hanya teks pembahasan tanpa label "Pembahasan:". JANGAN gunakan penebalan atau list markdown.`;
 
   try {
     const response = await smartGeminiCall({
       contents: prompt,
       config: {
-        systemInstruction: "Anda adalah pakar edukasi. Berikan penjelasan logis dan mendidik."
+        systemInstruction: "Anda adalah pakar edukasi. Berikan penjelasan logis dan mendidik dalam teks polos murni (Plain Text)."
       }
     });
-    return response.text?.trim() || "";
+    return cleanFormatting(response.text || "");
   } catch (err) {
     throw new Error("Gagal generate pembahasan.");
   }
 };
 
-// Fungsi baru untuk analisis level saja
 export const analyzeLevelForQuestion = async (q: EduCBTQuestion): Promise<string> => {
   const prompt = `Analisis LEVEL KOGNITIF (L1/L2/L3) soal berikut berdasarkan Taksonomi Bloom:
   SOAL: "${q.text}"
@@ -181,10 +176,10 @@ export const repairQuestions = async (questions: EduCBTQuestion[]): Promise<EduC
 
   const prompt = `LENGKAPI & PERBAIKI DATA SOAL (SMART REPAIR). 
   Tinjau daftar soal di bawah. Untuk setiap soal:
-  1. Jika 'material' berisi "Materi Belum Terisi" atau kosong, tentukan materi yang tepat berdasarkan teks.
-  2. Jika 'explanation' (pembahasan) kosong, buatkan penjelasan mendalam.
-  3. Validasi 'level' (L1-L3). Sesuaikan dengan kesulitan soal.
-  4. Pastikan 'type' sesuai dengan format soal tersebut.
+  1. Jika 'material' kosong, tentukan materi yang tepat.
+  2. Jika 'explanation' (pembahasan) kosong, buatkan penjelasan mendalam TANPA simbol markdown.
+  3. Validasi 'level' (L1-L3).
+  4. Pastikan 'type' sesuai.
 
   DATA SOAL: ${JSON.stringify(simplified)}`;
 
@@ -210,14 +205,13 @@ export const repairQuestions = async (questions: EduCBTQuestion[]): Promise<EduC
           ...original,
           material: (!original.material || original.material === "Materi Belum Terisi") ? repaired.material : original.material,
           level: (!original.level || original.level === "L1") ? (repaired.level || "L1") : original.level,
-          explanation: !original.explanation ? repaired.explanation : original.explanation,
+          explanation: !original.explanation ? cleanFormatting(repaired.explanation) : original.explanation,
           type: original.type === "Tipe Tidak Diketahui" ? repaired.type : original.type
         };
       }
       return original;
     });
   } catch (err) {
-    console.error("Repair error:", err);
     throw new Error("Gagal melengkapi data via AI.");
   }
 };
@@ -226,7 +220,7 @@ export const changeQuestionType = async (oldQuestion: EduCBTQuestion, newType: Q
   const prompt = `UBAH TIPE SOAL. TOKEN TETAP: ${oldQuestion.quizToken}
   SOAL: "${oldQuestion.text}"
   TIPE BARU: ${newType}
-  GUNAKAN "quizToken": "${oldQuestion.quizToken}" dalam JSON. NO HTML.`;
+  GUNAKAN "quizToken": "${oldQuestion.quizToken}" dalam JSON. NO HTML. NO MARKDOWN SYMBOLS.`;
 
   try {
     const response = await smartGeminiCall({
@@ -263,7 +257,7 @@ export const regenerateSingleQuestion = async (oldQuestion: EduCBTQuestion, cust
   const prompt = `REGENERASI SOAL. TOKEN TETAP: ${oldQuestion.quizToken}
   MATERI: ${oldQuestion.material}
   ${customInstructions ? `INSTRUKSI: ${customInstructions}` : 'Buat lebih berkualitas.'}
-  GUNAKAN "quizToken": "${oldQuestion.quizToken}" dalam JSON. NO HTML.`;
+  GUNAKAN "quizToken": "${oldQuestion.quizToken}" dalam JSON. NO HTML. NO MARKDOWN SYMBOLS.`;
 
   try {
     const response = await smartGeminiCall({
@@ -320,13 +314,12 @@ const normalizeQuestion = (q: any, config: any): EduCBTQuestion => {
   }
 
   const finalQuizToken = (q.quizToken || config.quizToken || "").toString().toUpperCase();
-  const cleanHtml = (str: string) => (str || "").replace(/<[^>]*>?/gm, '');
 
   return {
     ...q,
     id: q.id || `q_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-    text: cleanHtml(q.text || q.question),
-    explanation: cleanHtml(q.explanation),
+    text: cleanFormatting(q.text || q.question),
+    explanation: cleanFormatting(q.explanation),
     correctAnswer: correctedAnswer,
     subject: q.subject || config.subject,
     phase: q.phase || config.phase,
@@ -344,11 +337,7 @@ export const generateImage = async (prompt: string): Promise<string> => {
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash-image',
       contents: {
-        parts: [
-          {
-            text: `Create a high quality, clear educational illustration for a test question: ${prompt}`,
-          },
-        ],
+        parts: [{ text: `Create a high quality, clear educational illustration for a test question: ${prompt}` }],
       },
     });
 
@@ -362,7 +351,6 @@ export const generateImage = async (prompt: string): Promise<string> => {
     }
     return "";
   } catch (error) { 
-    console.error("Image generation error:", error);
     return ""; 
   }
 };

@@ -180,12 +180,12 @@ const QuestionEditor: React.FC<Props> = ({ question, onSave, onClose }) => {
                  <button 
                    onClick={handleAutoAnalyzeLevel}
                    disabled={isAnalyzingLevel}
-                   className="text-[9px] font-black uppercase text-indigo-500 hover:text-indigo-700 flex items-center gap-1 transition-colors"
+                   className="text-[9px] font-black uppercase text-indigo-500 hover:text-indigo-700 flex items-center gap-1 transition-colors bg-white px-2 py-0.5 rounded border border-indigo-100 shadow-sm"
                    title="Analisis Level via AI"
                  >
                    {isAnalyzingLevel ? (
                      <div className="w-2 h-2 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
-                   ) : '✨ Auto'}
+                   ) : '✨ Auto-Level'}
                  </button>
               </div>
             </div>
@@ -196,29 +196,6 @@ const QuestionEditor: React.FC<Props> = ({ question, onSave, onClose }) => {
         </div>
 
         <div className="flex-grow overflow-y-auto p-8 space-y-8 bg-white">
-          {isBS && (
-            <div className="bg-purple-50 p-4 rounded-xl border border-purple-200 grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-[10px] font-black text-purple-700 uppercase mb-1">Label Nilai TRUE</label>
-                <input 
-                  type="text" 
-                  className="w-full px-3 py-2 rounded-lg border border-purple-300 text-sm font-bold"
-                  value={edited.tfLabels?.true}
-                  onChange={(e) => handleTfLabelChange('true', e.target.value)}
-                />
-              </div>
-              <div>
-                <label className="block text-[10px] font-black text-purple-700 uppercase mb-1">Label Nilai FALSE</label>
-                <input 
-                  type="text" 
-                  className="w-full px-3 py-2 rounded-lg border border-purple-300 text-sm font-bold"
-                  value={edited.tfLabels?.false}
-                  onChange={(e) => handleTfLabelChange('false', e.target.value)}
-                />
-              </div>
-            </div>
-          )}
-
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
             <div className="lg:col-span-7 space-y-6">
               <div className="bg-blue-50/30 p-5 rounded-2xl border border-blue-100">
@@ -274,12 +251,12 @@ const QuestionEditor: React.FC<Props> = ({ question, onSave, onClose }) => {
                               type="button"
                               onClick={() => handleCorrectAnswerChange(i)}
                               className={`px-3 py-1 rounded text-[10px] font-black uppercase transition-all ${
-                                (edited.correctAnswer as boolean[])[i] 
+                                Array.isArray(edited.correctAnswer) && (edited.correctAnswer as boolean[])[i] 
                                   ? 'bg-emerald-600 text-white' 
                                   : 'bg-slate-200 text-slate-600'
                               }`}
                             >
-                              {(edited.correctAnswer as boolean[])[i] ? edited.tfLabels?.true : edited.tfLabels?.false}
+                              {Array.isArray(edited.correctAnswer) && (edited.correctAnswer as boolean[])[i] ? (edited.tfLabels?.true || 'Benar') : (edited.tfLabels?.false || 'Salah')}
                             </button>
                           ) : (
                             <div className="flex flex-col items-center gap-1">
@@ -329,7 +306,7 @@ const QuestionEditor: React.FC<Props> = ({ question, onSave, onClose }) => {
               >
                 {isGeneratingExpl ? (
                   <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                ) : '✨ Auto-Generate'}
+                ) : '✨ Generate Pembahasan'}
               </button>
             </div>
             <textarea 
