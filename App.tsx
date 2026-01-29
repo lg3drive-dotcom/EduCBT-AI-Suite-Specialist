@@ -8,6 +8,7 @@ import QuestionEditor from './components/QuestionEditor';
 import { EduCBTQuestion, GenerationConfig, QuestionType } from './types';
 import { generateEduCBTQuestions, regenerateSingleQuestion, repairQuestions } from './geminiService';
 import { downloadSoalDoc, downloadKisiKisiDoc, downloadSoalPdf, downloadKisiKisiPdf, exportQuestionsToExcel } from './utils/exportUtils';
+import { shuffleQuestions, shuffleAllOptions } from './utils/shuffleUtils';
 
 const App: React.FC = () => {
   const [questions, setQuestions] = useState<EduCBTQuestion[]>([]);
@@ -201,6 +202,30 @@ const App: React.FC = () => {
     });
   };
 
+  const handleShuffleQuestions = () => {
+    if (activeQuestions.length <= 1) return;
+    if (!confirm("Acak urutan soal? Ini akan mereset nomor urut.")) return;
+    
+    setQuestions(prev => {
+      const active = prev.filter(q => !q.isDeleted);
+      const trashed = prev.filter(q => q.isDeleted);
+      const shuffled = shuffleQuestions(active);
+      return [...shuffled, ...trashed];
+    });
+  };
+
+  const handleShuffleOptions = () => {
+    if (activeQuestions.length === 0) return;
+    if (!confirm("Acak semua pilihan jawaban (opsi) pada soal aktif? Kunci jawaban akan otomatis disesuaikan.")) return;
+    
+    setQuestions(prev => {
+      const active = prev.filter(q => !q.isDeleted);
+      const trashed = prev.filter(q => q.isDeleted);
+      const shuffled = shuffleAllOptions(active);
+      return [...shuffled, ...trashed];
+    });
+  };
+
   return (
     <div className="min-h-screen flex flex-col">
       <Header />
@@ -250,8 +275,23 @@ const App: React.FC = () => {
                       <button 
                         onClick={reorderSequentially}
                         className="px-3 py-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg text-[10px] font-black uppercase hover:bg-emerald-100 transition-colors"
+                        title="Urutkan soal berdasarkan Token dan Nomor"
                       >
                         Auto-Urut
+                      </button>
+                      <button 
+                        onClick={handleShuffleQuestions}
+                        className="px-3 py-1.5 bg-orange-50 text-orange-700 border border-orange-200 rounded-lg text-[10px] font-black uppercase hover:bg-orange-100 transition-colors"
+                        title="Acak urutan seluruh soal aktif"
+                      >
+                        Acak Soal
+                      </button>
+                      <button 
+                        onClick={handleShuffleOptions}
+                        className="px-3 py-1.5 bg-purple-50 text-purple-700 border border-purple-200 rounded-lg text-[10px] font-black uppercase hover:bg-purple-100 transition-colors"
+                        title="Acak pilihan jawaban (opsi) tiap soal"
+                      >
+                        Acak Opsi
                       </button>
                       <button onClick={() => exportQuestionsToExcel(activeQuestions)} className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-[10px] font-black uppercase flex items-center gap-2 shadow-emerald-200 shadow-lg">
                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0L8 8m4-4v12" /></svg>
