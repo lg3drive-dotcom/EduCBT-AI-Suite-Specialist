@@ -2,8 +2,8 @@
 export enum QuestionType {
   PilihanGanda = 'Pilihan Ganda',
   MCMA = 'Pilihan Jamak (MCMA)',
-  Kompleks = 'Pilihan Ganda Kompleks',
-  KompleksBS = 'Pilihan Ganda Kompleks (B/S)',
+  BenarSalah = '(Benar/Salah)',
+  SesuaiTidakSesuai = '(Sesuai/Tidak Sesuai)',
   Isian = 'ISIAN',
   Uraian = 'URAIAN'
 }
@@ -18,7 +18,6 @@ export type EduCBTQuestion = {
   text: string;
   explanation: string;
   options: string[];
-  // Fix: Added string and boolean to allow for Isian/Uraian and single boolean answers
   correctAnswer: string | number | boolean | number[] | boolean[];
   tfLabels?: {
     true: string;

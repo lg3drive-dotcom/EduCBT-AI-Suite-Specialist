@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { GenerationConfig, QuestionType, EduCBTQuestion } from '../types';
 import { downloadExcelTemplate } from '../utils/exportUtils';
 
@@ -17,108 +17,94 @@ const GenerationForm: React.FC<Props> = ({ onGenerate, onImportJson, isLoading }
     typeCounts: {
       [QuestionType.PilihanGanda]: 5,
       [QuestionType.MCMA]: 0,
-      [QuestionType.Kompleks]: 0,
-      [QuestionType.KompleksBS]: 0,
+      [QuestionType.BenarSalah]: 0,
+      [QuestionType.SesuaiTidakSesuai]: 0,
       [QuestionType.Isian]: 0,
       [QuestionType.Uraian]: 0,
     },
-    levelCounts: {
-      'L1': 2,
-      'L2': 2,
-      'L3': 1,
-    },
+    levelCounts: { 'L1': 2, 'L2': 2, 'L3': 1 },
     quizToken: '',
     referenceText: '',
     specialInstructions: ''
   });
 
-  const [fileName, setFileName] = useState<string | null>(null);
+  const [refFileName, setRefFileName] = useState<string | null>(null);
   const [isExtracting, setIsExtracting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const phaseDescriptions: Record<string, string> = {
-    'Fase A': '(Kelas 1-2 SD)',
-    'Fase B': '(Kelas 3-4 SD)',
-    'Fase C': '(Kelas 5-6 SD)',
-    'Fase D': '(Kelas 7-9 SMP)',
-    'Fase E': '(Kelas 10 SMA)',
-    'Fase F': '(Kelas 11-12 SMA)',
+  const handleFileReference = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setRefFileName(file.name);
+    setIsExtracting(true);
+
+    try {
+      let text = "";
+      if (file.type === "application/pdf") {
+        // @ts-ignore
+        const pdfJS = window.pdfjsLib;
+        pdfJS.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        const arrayBuffer = await file.arrayBuffer();
+        const pdf = await pdfJS.getDocument({ data: arrayBuffer }).promise;
+        let fullText = "";
+        for (let i = 1; i <= pdf.numPages; i++) {
+          const page = await pdf.getPage(i);
+          const content = await page.getTextContent();
+          fullText += content.items.map((item: any) => item.str).join(" ") + "\n";
+        }
+        text = fullText;
+      } else if (file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
+        // @ts-ignore
+        const mammoth = window.mammoth;
+        const arrayBuffer = await file.arrayBuffer();
+        const result = await mammoth.extractRawText({ arrayBuffer });
+        text = result.value;
+      } else {
+        text = await file.text();
+      }
+      
+      setFormData(prev => ({ ...prev, referenceText: text }));
+      alert("Teks berhasil diekstrak dari dokumen.");
+    } catch (err) {
+      console.error(err);
+      alert("Gagal membaca dokumen.");
+    } finally {
+      setIsExtracting(false);
+    }
   };
 
-  // Helper untuk mendeteksi tipe soal dari teks Excel yang tidak konsisten
   const mapExcelType = (raw: string): QuestionType => {
     const s = raw.toString().toLowerCase().trim();
-    if (s.includes('b/s') || s.includes('bs') || s.includes('benar') || s.includes('salah')) {
-      return QuestionType.KompleksBS;
-    }
-    if (s.includes('kompleks')) {
-      return QuestionType.Kompleks;
-    }
-    if (s.includes('jamak') || s.includes('mcma')) {
-      return QuestionType.MCMA;
-    }
-    if (s.includes('isian') || s.includes('isian singkat')) {
-      return QuestionType.Isian;
-    }
-    if (s.includes('uraian') || s.includes('essay')) {
-      return QuestionType.Uraian;
-    }
+    if (s.includes('b/s') || s.includes('bs') || s.includes('benar') || s.includes('salah')) return QuestionType.BenarSalah;
+    if (s.includes('sesuai') || s.includes('tidak sesuai')) return QuestionType.SesuaiTidakSesuai;
+    if (s.includes('jamak') || s.includes('mcma')) return QuestionType.MCMA;
+    if (s.includes('isian')) return QuestionType.Isian;
+    if (s.includes('uraian')) return QuestionType.Uraian;
     return QuestionType.PilihanGanda;
   };
 
   const parseExcelQuestions = (data: any[]): EduCBTQuestion[] => {
     return data.map((row, i) => {
-      const tipeRaw = row["Tipe Soal"] || row["Tipe"] || row["tipe"] || "";
-      const level = (row["Level"] || row["level"] || "L1").toString().toUpperCase();
-      const teks = (row["Teks Soal"] || row["Soal"] || row["Pertanyaan"] || row["soal"] || "").toString();
-      const material = (row["Materi"] || row["materi"] || "").toString();
-      const explanation = (row["Pembahasan"] || row["Penjelasan"] || row["penjelasan"] || "").toString();
-      const token = (row["Token Paket"] || row["Token"] || row["token"] || "").toString();
-      
-      const mainImage = (row["Gambar Soal (URL)"] || row["Gambar Soal"] || "").toString();
-
-      const options = [
-        row["Opsi A"], row["Opsi B"], row["Opsi C"], row["Opsi D"], row["Opsi E"]
-      ].filter(o => o !== undefined && o !== null && o !== "").map(o => o.toString());
-
-      const optionImages = [
-        row["Gambar Opsi A (URL)"] || row["Gambar Opsi A"] || null,
-        row["Gambar Opsi B (URL)"] || row["Gambar Opsi B"] || null,
-        row["Gambar Opsi C (URL)"] || row["Gambar Opsi C"] || null,
-        row["Gambar Opsi D (URL)"] || row["Gambar Opsi D"] || null,
-        row["Gambar Opsi E (URL)"] || row["Gambar Opsi E"] || null,
-      ].map(o => o ? o.toString() : null);
-
-      let kunci = (row["Kunci Jawaban"] || row["Kunci"] || row["kunci"] || "").toString();
-      
-      // Gunakan mapper cerdas untuk menentukan tipe
+      const tipeRaw = row["Tipe Soal"] || row["tipe"] || "";
+      const teks = (row["Teks Soal"] || row["soal"] || "").toString();
+      const options = [row["Opsi A"], row["Opsi B"], row["Opsi C"], row["Opsi D"], row["Opsi E"]].filter(o => o).map(o => o.toString());
+      let kunci = (row["Kunci Jawaban"] || "").toString();
       let tipe = mapExcelType(tipeRaw);
+      let correctAnswer: any;
 
-      let correctAnswer: any = 0;
-
-      // Normalisasi Kunci Jawaban berdasarkan Tipe yang sudah divalidasi
       if (tipe === QuestionType.PilihanGanda) {
         correctAnswer = (kunci.toUpperCase().trim().charCodeAt(0) - 65);
-        if (isNaN(correctAnswer) || correctAnswer < 0) correctAnswer = 0;
       } else if (tipe === QuestionType.MCMA) {
-        correctAnswer = kunci.split(/[,;|]/).map(k => k.trim().toUpperCase().charCodeAt(0) - 65).filter(n => !isNaN(n) && n >= 0);
-      } else if (tipe === QuestionType.KompleksBS) {
+        correctAnswer = kunci.split(/[,;|]/).map(k => k.trim().toUpperCase().charCodeAt(0) - 65).filter(n => n >= 0);
+      } else if (tipe === QuestionType.BenarSalah || tipe === QuestionType.SesuaiTidakSesuai) {
         correctAnswer = kunci.split(/[,;|]/).map(k => {
           const val = k.trim().toUpperCase();
-          // Anggap 'B', 'BENAR', 'TRUE', '1', atau 'Y' sebagai TRUE
-          return (val === 'B' || val === 'TRUE' || val === 'BENAR' || val === '1' || val === 'Y');
+          return (val === 'B' || val === 'TRUE' || val === 'S' || val === 'BENAR' || val === 'SESUAI');
         });
-        
-        // Pastikan jumlah kunci sama dengan jumlah opsi pernyataan
         if (correctAnswer.length < options.length) {
-          const padding = new Array(options.length - correctAnswer.length).fill(false);
-          correctAnswer = [...correctAnswer, ...padding];
+          correctAnswer = [...correctAnswer, ...new Array(options.length - correctAnswer.length).fill(false)];
         }
-      } else if (tipe === QuestionType.Kompleks) {
-        // Pilihan Ganda Kompleks (Index-based checklist)
-        correctAnswer = kunci.split(/[,;|]/).map(k => {
-           const idx = k.trim().toUpperCase().charCodeAt(0) - 65;
-           return !isNaN(idx) && idx >= 0 ? idx : -1;
-        }).filter(idx => idx !== -1);
       } else {
         correctAnswer = kunci;
       }
@@ -126,21 +112,19 @@ const GenerationForm: React.FC<Props> = ({ onGenerate, onImportJson, isLoading }
       return {
         id: `xl_${Date.now()}_${i}`,
         type: tipe,
-        level: level,
+        level: (row["Level"] || "L1").toString(),
         subject: formData.subject,
         phase: formData.phase,
-        material: material || "Materi Belum Terisi",
-        text: teks || "(Teks soal kosong)",
-        explanation: explanation,
-        options: options,
-        optionImages: optionImages,
-        image: mainImage || undefined,
-        correctAnswer: correctAnswer,
+        material: (row["Materi"] || "Materi Belum Terisi").toString(),
+        text: teks,
+        explanation: (row["Pembahasan"] || "").toString(),
+        options,
+        correctAnswer,
         isDeleted: false,
         createdAt: Date.now(),
         order: parseInt(row["No"]) || (i + 1),
-        quizToken: token || formData.quizToken,
-        tfLabels: tipe === QuestionType.KompleksBS ? { true: 'Benar', false: 'Salah' } : undefined
+        quizToken: (row["Token Paket"] || formData.quizToken).toString(),
+        tfLabels: tipe === QuestionType.BenarSalah ? { true: 'Benar', false: 'Salah' } : (tipe === QuestionType.SesuaiTidakSesuai ? { true: 'Sesuai', false: 'Tidak Sesuai' } : undefined)
       };
     });
   };
@@ -148,353 +132,132 @@ const GenerationForm: React.FC<Props> = ({ onGenerate, onImportJson, isLoading }
   const handleExcelImport = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
     const reader = new FileReader();
     reader.onload = (evt) => {
-      try {
-        // @ts-ignore
-        const bstr = evt.target.result;
-        // @ts-ignore
-        const wb = window.XLSX.read(bstr, { type: 'binary' });
-        const wsname = wb.SheetNames[0];
-        const ws = wb.Sheets[wsname];
-        // @ts-ignore
-        const data = window.XLSX.utils.sheet_to_json(ws);
-        
-        const imported = parseExcelQuestions(data);
-        if (imported.length > 0) {
-          onImportJson(imported);
-          alert(`${imported.length} soal terbaca. Deteksi tipe soal kini lebih cerdas.`);
-        }
-      } catch (err) {
-        console.error(err);
-        alert("Gagal membaca file Excel. Pastikan format kolom sesuai template.");
-      }
+      // @ts-ignore
+      const wb = window.XLSX.read(evt.target.result, { type: 'binary' });
+      // @ts-ignore
+      const data = window.XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+      onImportJson(parseExcelQuestions(data));
+      alert("Import Excel berhasil.");
     };
     reader.readAsBinaryString(file);
     e.target.value = '';
   };
 
-  const handleJsonUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-
-    let allQuestions: EduCBTQuestion[] = [];
-    const filePromises = Array.from(files).map((file: File) => {
-      return new Promise<void>((resolve) => {
-        const reader = new FileReader();
-        reader.onload = (event) => {
-          try {
-            const json = JSON.parse(event.target?.result as string);
-            if (Array.isArray(json)) {
-              allQuestions = [...allQuestions, ...json];
-            } else if (json && typeof json === 'object') {
-              allQuestions.push(json as EduCBTQuestion);
-            }
-          } catch (err) {
-            console.error(`Gagal membaca file: ${file.name}`);
-          }
-          resolve();
-        };
-        reader.readAsText(file);
-      });
-    });
-
-    await Promise.all(filePromises);
-    if (allQuestions.length > 0) {
-      onImportJson(allQuestions);
-      alert(`${allQuestions.length} soal berhasil digabungkan.`);
-    }
-    e.target.value = '';
-  };
-
-  const extractPdfText = async (data: ArrayBuffer): Promise<string> => {
-    // @ts-ignore
-    const pdfjsLib = window['pdfjs-dist/build/pdf'];
-    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-    
-    const loadingTask = pdfjsLib.getDocument({ data });
-    const pdf = await loadingTask.promise;
-    let fullText = '';
-    
-    for (let i = 1; i <= pdf.numPages; i++) {
-      const page = await pdf.getPage(i);
-      const content = await page.getTextContent();
-      const strings = content.items.map((item: any) => item.str);
-      fullText += strings.join(' ') + '\n';
-    }
-    return fullText;
-  };
-
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setFileName(file.name);
-    setIsExtracting(true);
-
-    try {
-      const reader = new FileReader();
-      
-      if (file.type === 'application/pdf') {
-        reader.onload = async (event) => {
-          const text = await extractPdfText(event.target?.result as ArrayBuffer);
-          setFormData(prev => ({ ...prev, referenceText: text }));
-          setIsExtracting(false);
-        };
-        reader.readAsArrayBuffer(file);
-      } 
-      else if (file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
-        reader.onload = async (event) => {
-          // @ts-ignore
-          const result = await window.mammoth.extractRawText({ arrayBuffer: event.target?.result });
-          setFormData(prev => ({ ...prev, referenceText: result.value }));
-          setIsExtracting(false);
-        };
-        reader.readAsArrayBuffer(file);
-      }
-      else if (file.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || file.type === 'application/vnd.ms-excel') {
-        reader.onload = (event) => {
-          // @ts-ignore
-          const workbook = window.XLSX.read(event.target?.result, { type: 'array' });
-          let sheetText = '';
-          workbook.SheetNames.forEach((name: string) => {
-            // @ts-ignore
-            const csv = window.XLSX.utils.sheet_to_csv(workbook.Sheets[name]);
-            sheetText += `--- Sheet: ${name} ---\n${csv}\n`;
-          });
-          setFormData(prev => ({ ...prev, referenceText: sheetText }));
-          setIsExtracting(false);
-        };
-        reader.readAsArrayBuffer(file);
-      }
-      else {
-        alert("Format file tidak didukung. Harap gunakan PDF, Word (.docx), atau Excel (.xlsx)");
-        setIsExtracting(false);
-      }
-    } catch (err) {
-      console.error(err);
-      alert("Gagal membaca file.");
-      setIsExtracting(false);
-    }
-  };
-
   const totalTypes = (Object.values(formData.typeCounts) as number[]).reduce((a, b) => a + b, 0);
   const totalLevels = (Object.values(formData.levelCounts) as number[]).reduce((a, b) => a + b, 0);
-  const isSync = totalTypes === totalLevels;
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (totalTypes === 0) {
-      alert("Pilih setidaknya 1 jumlah soal untuk salah satu tipe.");
-      return;
-    }
-    if (!isSync) {
-      alert(`Total tipe soal (${totalTypes}) harus sama dengan total level kognitif (${totalLevels}).`);
-      return;
-    }
-    onGenerate(formData);
-  };
-
-  const updateTypeCount = (type: string, value: string) => {
-    const count = parseInt(value) || 0;
-    setFormData({
-      ...formData,
-      typeCounts: {
-        ...formData.typeCounts,
-        [type]: count
-      }
-    });
-  };
-
-  const updateLevelCount = (level: string, value: string) => {
-    const count = parseInt(value) || 0;
-    setFormData({
-      ...formData,
-      levelCounts: {
-        ...formData.levelCounts,
-        [level]: count
-      }
-    });
-  };
+  const isMismatch = totalTypes !== totalLevels;
 
   return (
-    <form onSubmit={handleSubmit} className="bg-white p-5 rounded-2xl border-2 border-blue-100 shadow-xl space-y-6">
-      <div className="space-y-2">
-        <div className="flex gap-2">
-          <label className="flex-1 flex items-center justify-center gap-2 py-3 px-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl cursor-pointer transition-all border border-slate-200">
-             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1M5 19h14a2 2 0 002-2v-5a2 2 0 00-2-2H9l-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
-             <div className="flex flex-col">
-               <span className="text-[10px] font-black uppercase tracking-widest leading-none">Buka JSON</span>
-             </div>
-             <input type="file" className="hidden" accept=".json" multiple onChange={handleJsonUpload} />
-          </label>
-          <label className="flex-1 flex items-center justify-center gap-2 py-3 px-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl cursor-pointer transition-all border border-emerald-200">
-             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-             <div className="flex flex-col">
-               <span className="text-[10px] font-black uppercase tracking-widest leading-none">Import Excel</span>
-             </div>
-             <input type="file" className="hidden" accept=".xlsx, .xls, .csv" onChange={handleExcelImport} />
-          </label>
-        </div>
-        <button 
-          type="button"
-          onClick={downloadExcelTemplate}
-          className="w-full flex items-center justify-center gap-2 py-2 text-[9px] font-black uppercase text-indigo-500 hover:text-indigo-700 transition-colors"
-        >
-          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" /></svg>
-          Unduh Template Excel
+    <form onSubmit={(e) => { e.preventDefault(); onGenerate(formData); }} className="space-y-6">
+      <div className="flex gap-2">
+        <label className="flex-1 flex items-center justify-center gap-2 py-3 px-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl cursor-pointer border border-slate-200 transition-all">
+           <span className="text-[10px] font-black uppercase tracking-widest leading-none">Buka JSON</span>
+           <input type="file" className="hidden" accept=".json" multiple onChange={(e) => {
+             const files = Array.from(e.target.files || []) as File[];
+             files.forEach((f) => {
+               const r = new FileReader();
+               r.onload = (ev) => onImportJson(JSON.parse(ev.target?.result as string));
+               r.readAsText(f);
+             });
+           }} />
+        </label>
+        <label className="flex-1 flex items-center justify-center gap-2 py-3 px-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl cursor-pointer border border-emerald-200 transition-all">
+           <span className="text-[10px] font-black uppercase tracking-widest leading-none">Import Excel</span>
+           <input type="file" className="hidden" accept=".xlsx, .xls" onChange={handleExcelImport} />
+        </label>
+        <button type="button" onClick={downloadExcelTemplate} className="p-3 bg-white border border-slate-200 text-slate-400 rounded-xl hover:text-indigo-600 hover:border-indigo-200 transition-all" title="Unduh Template Excel">
+           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4-4m0 0L8 8m4-4v12" /></svg>
         </button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="bg-blue-50 p-4 rounded-xl border-2 border-blue-200">
-          <label className="block text-xs font-black text-blue-700 uppercase tracking-wider mb-2">Mata Pelajaran</label>
-          <input
-            required
-            type="text"
-            className="w-full px-4 py-3 rounded-lg border-2 border-blue-300 bg-white text-blue-900 font-bold focus:ring-4 focus:ring-blue-100 focus:border-blue-500 outline-none transition-all"
-            placeholder="Ketik Mapel..."
-            value={formData.subject}
-            onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
-          />
+        <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100">
+          <label className="block text-[10px] font-black text-blue-700 uppercase mb-2">Mata Pelajaran</label>
+          <input required type="text" className="w-full px-4 py-2 rounded-lg border border-blue-200 bg-white text-sm font-bold outline-none focus:ring-2 focus:ring-blue-400" value={formData.subject} onChange={(e) => setFormData({ ...formData, subject: e.target.value })} />
         </div>
-        <div className="bg-blue-50 p-4 rounded-xl border-2 border-blue-200">
-          <label className="block text-xs font-black text-blue-700 uppercase tracking-wider mb-2">Fase Kurikulum</label>
-          <select
-            className="w-full px-4 py-3 rounded-lg border-2 border-blue-300 bg-white text-blue-900 font-bold focus:ring-4 focus:ring-blue-100 focus:border-blue-500 outline-none transition-all"
-            value={formData.phase}
-            onChange={(e) => setFormData({ ...formData, phase: e.target.value })}
-          >
-            {Object.keys(phaseDescriptions).map(f => (
-              <option key={f} value={f}>{f} {phaseDescriptions[f]}</option>
-            ))}
+        <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100">
+          <label className="block text-[10px] font-black text-blue-700 uppercase mb-2">Fase</label>
+          <select className="w-full px-4 py-2 rounded-lg border border-blue-200 bg-white text-sm font-bold outline-none" value={formData.phase} onChange={(e) => setFormData({ ...formData, phase: e.target.value })}>
+            <option value="Fase A">Fase A (Kelas 1-2)</option>
+            <option value="Fase B">Fase B (Kelas 3-4)</option>
+            <option value="Fase C">Fase C (Kelas 5-6)</option>
+            <option value="Fase D">Fase D (SMP)</option>
+            <option value="Fase E">Fase E (SMA 10)</option>
+            <option value="Fase F">Fase F (SMA 11-12)</option>
           </select>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="bg-cyan-50 p-4 rounded-xl border-2 border-cyan-200 relative">
-          <label className="block text-xs font-black text-cyan-800 uppercase tracking-wider mb-2">Unggah Referensi (PDF/DOC/XLS)</label>
-          <label className="flex flex-col items-center justify-center h-24 border-2 border-dashed border-cyan-300 rounded-lg bg-white cursor-pointer hover:bg-cyan-50 transition-all">
-            <div className="flex flex-col items-center justify-center pt-2 pb-3">
-              <svg className="w-8 h-8 mb-1 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-              </svg>
-              <p className="text-[10px] text-cyan-600 font-bold">{fileName || "Pilih File Referensi"}</p>
-            </div>
-            <input type="file" className="hidden" accept=".pdf,.docx,.xlsx,.xls" onChange={handleFileUpload} />
-          </label>
-          {isExtracting && (
-            <div className="absolute inset-0 bg-white/60 flex items-center justify-center rounded-xl">
-               <span className="text-[10px] font-black text-cyan-700 animate-pulse">MEMBACA DOKUMEN...</span>
-            </div>
-          )}
+      <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+        <div className="flex justify-between items-center mb-2">
+          <label className="block text-[10px] font-black text-slate-500 uppercase">Dokumen Referensi (Optional)</label>
+          {refFileName && <button type="button" onClick={() => { setRefFileName(null); setFormData(p => ({...p, referenceText: ''})); }} className="text-[9px] font-bold text-rose-500">Hapus</button>}
         </div>
-
-        <div className="bg-amber-50 p-4 rounded-xl border-2 border-amber-200">
-          <label className="block text-xs font-black text-amber-800 uppercase tracking-wider mb-2">Instruksi Khusus (Opsional)</label>
-          <textarea
-            rows={3}
-            className="w-full px-4 py-3 rounded-lg border-2 border-amber-300 bg-white text-amber-900 font-medium focus:ring-4 focus:ring-amber-100 focus:border-amber-500 outline-none transition-all text-sm"
-            placeholder="Misal: Gunakan konteks kearifan lokal..."
-            value={formData.specialInstructions}
-            onChange={(e) => setFormData({ ...formData, specialInstructions: e.target.value })}
-          />
-        </div>
+        <label className={`flex flex-col items-center justify-center p-4 border-2 border-dashed rounded-xl cursor-pointer transition-all ${isExtracting ? 'bg-indigo-50 border-indigo-300' : 'bg-white border-slate-200 hover:border-indigo-400'}`}>
+           {isExtracting ? (
+             <div className="flex items-center gap-2">
+               <div className="w-4 h-4 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+               <span className="text-xs font-bold text-indigo-600">Mengekstrak Teks...</span>
+             </div>
+           ) : (
+             <>
+               <span className="text-xs font-bold text-slate-600">{refFileName || "Upload PDF/Docx/Text"}</span>
+               <span className="text-[9px] text-slate-400 mt-1 uppercase">AI akan membuat soal berdasarkan isi dokumen ini</span>
+             </>
+           )}
+           <input type="file" className="hidden" accept=".pdf, .docx, .txt" onChange={handleFileReference} />
+        </label>
       </div>
 
-      <div className="bg-emerald-50 p-4 rounded-xl border-2 border-emerald-200">
-        <label className="block text-xs font-black text-emerald-800 uppercase tracking-wider mb-2">Materi / Indikator CP</label>
-        <textarea
-          required
-          rows={2}
-          className="w-full px-4 py-3 rounded-lg border-2 border-emerald-300 bg-white text-emerald-900 font-medium focus:ring-4 focus:ring-emerald-100 focus:border-emerald-500 outline-none transition-all text-sm"
-          placeholder="Tulis topik atau tujuan pembelajaran soal..."
-          value={formData.material}
-          onChange={(e) => setFormData({ ...formData, material: e.target.value })}
-        />
+      <div className="bg-emerald-50/50 p-4 rounded-xl border border-emerald-100">
+        <label className="block text-[10px] font-black text-emerald-800 uppercase mb-2">Materi / Indikator CP</label>
+        <textarea required rows={2} className="w-full px-4 py-2 rounded-lg border border-emerald-200 bg-white text-sm font-medium outline-none focus:ring-2 focus:ring-emerald-400" value={formData.material} onChange={(e) => setFormData({ ...formData, material: e.target.value })} />
       </div>
 
-      <div className="space-y-6">
-        <div className="bg-yellow-50 p-4 rounded-xl border-2 border-yellow-200 space-y-4">
-          <div className="flex justify-between items-end border-b-2 border-yellow-200 pb-2">
-            <label className="text-sm font-black text-yellow-900 uppercase tracking-widest">Tipe Soal</label>
-            <span className="bg-yellow-200 px-3 py-1 rounded-full text-xs font-black text-yellow-900">TOTAL: {totalTypes}</span>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {Object.values(QuestionType).map(type => (
-              <div key={type} className="flex items-center justify-between gap-3 bg-white p-3 rounded-xl border-2 border-yellow-100 shadow-sm hover:border-yellow-400 transition-colors">
-                <span className="text-[10px] font-black text-yellow-800 uppercase leading-tight flex-1">
-                  {type}
-                </span>
-                <input
-                  type="number"
-                  min={0}
-                  className="w-14 shrink-0 px-2 py-2 rounded-lg border-2 border-yellow-200 bg-yellow-50 text-center text-sm font-black text-yellow-900 focus:ring-2 focus:ring-yellow-500 outline-none"
-                  value={formData.typeCounts[type]}
-                  onChange={(e) => updateTypeCount(type, e.target.value)}
-                />
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="bg-pink-50 p-4 rounded-xl border-2 border-pink-200 space-y-4">
-          <div className="flex justify-between items-end border-b-2 border-pink-200 pb-2">
-            <label className="text-sm font-black text-pink-900 uppercase tracking-widest">Level Kognitif</label>
-            <span className={`px-3 py-1 rounded-full text-xs font-black shadow-sm ${isSync ? 'bg-pink-200 text-pink-900' : 'bg-red-500 text-white animate-bounce'}`}>
-              TOTAL: {totalLevels} {isSync ? '' : `(!)`}
-            </span>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            {['L1', 'L2', 'L3'].map(level => (
-              <div key={level} className="flex flex-col gap-2 bg-white p-3 rounded-xl border-2 border-pink-100 shadow-sm hover:border-pink-400 transition-colors">
-                <div className="flex justify-between items-center">
-                  <span className="text-lg font-black text-pink-600">{level}</span>
-                  <input
-                    type="number"
-                    min={0}
-                    className="w-14 px-2 py-2 rounded-lg border-2 border-pink-200 bg-pink-50 text-center text-sm font-black text-pink-900 focus:ring-2 focus:ring-pink-500 outline-none"
-                    value={formData.levelCounts[level]}
-                    onChange={(e) => updateLevelCount(level, e.target.value)}
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      <div className="bg-white p-4 rounded-xl border-2 border-indigo-200 shadow-sm">
-        <label className="block text-xs font-black text-indigo-900 uppercase tracking-wider mb-2">Quiz Token (ID Paket)</label>
-        <input
-          type="text"
-          className="w-full px-4 py-3 rounded-lg border-2 border-indigo-100 bg-indigo-50/30 text-indigo-900 font-bold focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 outline-none transition-all placeholder:text-indigo-300 font-mono"
-          placeholder="CONTOH: BIND-C-01"
-          value={formData.quizToken}
-          onChange={(e) => setFormData({ ...formData, quizToken: e.target.value })}
-        />
-      </div>
-
-      <button
-        disabled={isLoading || !isSync || isExtracting}
-        type="submit"
-        className={`w-full py-5 px-6 rounded-2xl font-black text-base uppercase tracking-widest text-white shadow-2xl transition-all active:scale-95 ${
-          isLoading || !isSync || isExtracting
-            ? 'bg-slate-300 cursor-not-allowed border-b-0 opacity-80' 
-            : 'bg-indigo-600 hover:bg-indigo-700 border-b-4 border-indigo-900 shadow-indigo-200'
-        }`}
-      >
-        {isLoading ? (
-          <span className="flex items-center justify-center gap-3">
-            <svg className="animate-spin h-6 w-6 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-            </svg>
-            PROSES GENERATE...
+      <div className="bg-amber-50/50 p-4 rounded-xl border border-amber-100">
+        <div className="flex justify-between items-center mb-3">
+          <label className="block text-[10px] font-black text-amber-800 uppercase">Level Kognitif</label>
+          <span className={`text-[10px] font-black px-2 py-0.5 rounded ${isMismatch ? 'bg-rose-100 text-rose-600' : 'bg-emerald-100 text-emerald-600'}`}>
+            Total: {totalLevels}
           </span>
-        ) : isExtracting ? 'MEMBACA FILE...' : 'PROSES SEKARANG'}
+        </div>
+        <div className="grid grid-cols-3 gap-2">
+          {['L1', 'L2', 'L3'].map(lvl => (
+            <div key={lvl} className="bg-white p-2 rounded-lg border border-amber-200 text-center">
+              <span className="block text-[9px] font-black text-amber-600 mb-1">{lvl}</span>
+              <input type="number" min={0} className="w-full bg-transparent text-center font-black text-sm outline-none" value={formData.levelCounts[lvl]} onChange={(e) => setFormData({...formData, levelCounts: {...formData.levelCounts, [lvl]: parseInt(e.target.value) || 0}})} />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="bg-yellow-50/50 p-4 rounded-xl border border-yellow-100">
+        <div className="flex justify-between items-center mb-3">
+          <label className="block text-[10px] font-black text-yellow-800 uppercase">Tipe Soal</label>
+          <span className={`text-[10px] font-black px-2 py-0.5 rounded ${isMismatch ? 'bg-rose-100 text-rose-600' : 'bg-emerald-100 text-emerald-600'}`}>
+            Total: {totalTypes}
+          </span>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          {Object.values(QuestionType).map(type => (
+            <div key={type} className="flex items-center justify-between gap-2 bg-white p-2 rounded-lg border border-yellow-200">
+              <span className="text-[9px] font-black text-yellow-800 uppercase flex-1 truncate">{type}</span>
+              <input type="number" min={0} className="w-10 bg-transparent text-center font-black text-xs outline-none" value={formData.typeCounts[type]} onChange={(e) => setFormData({...formData, typeCounts: {...formData.typeCounts, [type]: parseInt(e.target.value) || 0}})} />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {isMismatch && (
+        <p className="text-[10px] font-bold text-rose-500 text-center animate-pulse">
+          ⚠ Total Tipe ({totalTypes}) dan Total Level ({totalLevels}) harus sama!
+        </p>
+      )}
+
+      <button disabled={isLoading || totalTypes === 0 || isMismatch} type="submit" className="w-full py-4 px-6 rounded-2xl font-black text-base uppercase tracking-widest text-white shadow-xl bg-indigo-600 hover:bg-indigo-700 transition-all active:scale-95 disabled:bg-slate-300 disabled:shadow-none">
+        {isLoading ? 'MEMPROSES...' : 'GENERATE SOAL AI'}
       </button>
     </form>
   );

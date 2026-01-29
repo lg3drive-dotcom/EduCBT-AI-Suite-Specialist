@@ -56,9 +56,9 @@ const App: React.FC = () => {
         const trash = prev.filter(q => q.isDeleted);
         return [...repaired, ...trash];
       });
-      alert("AI telah melengkapi data yang kosong (Pembahasan, Materi, dan Level).");
+      alert("AI telah melengkapi data yang kosong.");
     } catch (err: any) {
-      setError(err.message || "Gagal melakukan perbaikan data via AI.");
+      setError(err.message || "Gagal perbaikan data.");
     } finally {
       setRepairing(false);
     }
@@ -73,7 +73,7 @@ const App: React.FC = () => {
       const resultWithOrder = result.map((q, i) => ({ ...q, order: lastOrder + i + 1 }));
       setQuestions(prev => [...prev, ...resultWithOrder]);
     } catch (err: any) {
-      setError(err.message || "Gagal menghasilkan soal. Periksa koneksi atau API Key.");
+      setError(err.message || "Gagal menghasilkan soal.");
     } finally {
       setLoading(false);
     }
@@ -102,7 +102,7 @@ const App: React.FC = () => {
       const newQuestion = await regenerateSingleQuestion(target, instructions);
       setQuestions(prev => prev.map(q => q.id === id ? { ...newQuestion, isRegenerating: false } : q));
     } catch (err) {
-      alert("Gagal mengganti soal. AI sedang sibuk atau limit tercapai.");
+      alert("Gagal mengganti soal.");
       setQuestions(prev => prev.map(q => q.id === id ? { ...q, isRegenerating: false } : q));
     }
   };
@@ -115,37 +115,36 @@ const App: React.FC = () => {
 
         if (newType === QuestionType.PilihanGanda) {
           if (Array.isArray(q.correctAnswer)) {
-             const firstIndex = q.correctAnswer.findIndex(v => v === true || typeof v === 'number');
-             newCorrectAnswer = firstIndex !== -1 ? firstIndex : 0;
-          } else if (typeof q.correctAnswer !== 'number') {
-             newCorrectAnswer = 0;
+             if (typeof q.correctAnswer[0] === 'boolean') {
+               newCorrectAnswer = (q.correctAnswer as boolean[]).findIndex(v => v === true);
+             } else {
+               newCorrectAnswer = Number(q.correctAnswer[0]);
+             }
           }
+          if (isNaN(newCorrectAnswer as number) || typeof newCorrectAnswer !== 'number') newCorrectAnswer = 0;
         } 
         else if (newType === QuestionType.MCMA) {
           if (!Array.isArray(q.correctAnswer)) {
             newCorrectAnswer = [typeof q.correctAnswer === 'number' ? q.correctAnswer : 0];
-          } else {
-            if (typeof q.correctAnswer[0] === 'boolean') {
-               newCorrectAnswer = (q.correctAnswer as boolean[]).map((v, i) => v ? i : -1).filter(i => i !== -1);
-            }
+          } else if (typeof q.correctAnswer[0] === 'boolean') {
+             newCorrectAnswer = (q.correctAnswer as boolean[]).map((v, i) => v ? i : -1).filter(i => i !== -1);
           }
         }
-        else if (newType === QuestionType.Kompleks || newType === QuestionType.KompleksBS) {
-          if (!Array.isArray(q.correctAnswer)) {
-            const arr = q.options.map(() => false);
-            if (typeof q.correctAnswer === 'number' && q.correctAnswer < arr.length) {
-              arr[q.correctAnswer] = true;
+        else if (newType === QuestionType.BenarSalah || newType === QuestionType.SesuaiTidakSesuai) {
+          const arr = q.options.map(() => false);
+          if (Array.isArray(q.correctAnswer)) {
+            if (typeof q.correctAnswer[0] === 'number') {
+              (q.correctAnswer as number[]).forEach(idx => { if (idx < arr.length) arr[idx] = true; });
+            } else {
+              q.correctAnswer.forEach((v, i) => { if (i < arr.length) arr[i] = v === true; });
             }
-            newCorrectAnswer = arr;
-          } else if (typeof q.correctAnswer[0] === 'number') {
-             const arr = q.options.map(() => false);
-             (q.correctAnswer as number[]).forEach(idx => { if (idx < arr.length) arr[idx] = true; });
-             newCorrectAnswer = arr;
+          } else if (typeof q.correctAnswer === 'number' && q.correctAnswer < arr.length) {
+            arr[q.correctAnswer] = true;
           }
-
-          if (newType === QuestionType.KompleksBS && !newTfLabels) {
-            newTfLabels = { true: 'Benar', false: 'Salah' };
-          }
+          newCorrectAnswer = arr;
+          
+          if (newType === QuestionType.BenarSalah) newTfLabels = { true: 'Benar', false: 'Salah' };
+          else newTfLabels = { true: 'Sesuai', false: 'Tidak Sesuai' };
         }
         else if (newType === QuestionType.Isian || newType === QuestionType.Uraian) {
           newCorrectAnswer = "";
@@ -204,25 +203,21 @@ const App: React.FC = () => {
 
   const handleShuffleQuestions = () => {
     if (activeQuestions.length <= 1) return;
-    if (!confirm("Acak urutan soal? Ini akan mereset nomor urut.")) return;
-    
+    if (!confirm("Acak urutan soal?")) return;
     setQuestions(prev => {
       const active = prev.filter(q => !q.isDeleted);
       const trashed = prev.filter(q => q.isDeleted);
-      const shuffled = shuffleQuestions(active);
-      return [...shuffled, ...trashed];
+      return [...shuffleQuestions(active), ...trashed];
     });
   };
 
   const handleShuffleOptions = () => {
     if (activeQuestions.length === 0) return;
-    if (!confirm("Acak semua pilihan jawaban (opsi) pada soal aktif? Kunci jawaban akan otomatis disesuaikan.")) return;
-    
+    if (!confirm("Acak semua pilihan jawaban (opsi)? Kunci jawaban akan otomatis disesuaikan.")) return;
     setQuestions(prev => {
       const active = prev.filter(q => !q.isDeleted);
       const trashed = prev.filter(q => q.isDeleted);
-      const shuffled = shuffleAllOptions(active);
-      return [...shuffled, ...trashed];
+      return [...shuffleAllOptions(active), ...trashed];
     });
   };
 
@@ -244,10 +239,6 @@ const App: React.FC = () => {
             </div>
             {error && (
               <div className="mt-4 p-4 bg-red-50 border-2 border-red-200 text-red-700 rounded-xl text-xs font-bold animate-shake">
-                <div className="flex items-center gap-2 mb-1">
-                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" /></svg>
-                  <span>SISTEM AI TERKENDALA</span>
-                </div>
                 {error}
               </div>
             )}
@@ -267,36 +258,15 @@ const App: React.FC = () => {
                         <button 
                           onClick={handleSmartRepair}
                           disabled={repairing}
-                          className="px-3 py-1.5 bg-amber-600 text-white rounded-lg text-[10px] font-black uppercase flex items-center gap-2 hover:bg-amber-700 transition-colors shadow-lg shadow-amber-200 animate-pulse-slow"
+                          className="px-3 py-1.5 bg-amber-600 text-white rounded-lg text-[10px] font-black uppercase flex items-center gap-2 hover:bg-amber-700 transition-colors shadow-lg"
                         >
-                          {repairing ? 'Memproses...' : '✨ Lengkapi via AI'}
+                          {repairing ? '...' : '✨ Lengkapi via AI'}
                         </button>
                       )}
-                      <button 
-                        onClick={reorderSequentially}
-                        className="px-3 py-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg text-[10px] font-black uppercase hover:bg-emerald-100 transition-colors"
-                        title="Urutkan soal berdasarkan Token dan Nomor"
-                      >
-                        Auto-Urut
-                      </button>
-                      <button 
-                        onClick={handleShuffleQuestions}
-                        className="px-3 py-1.5 bg-orange-50 text-orange-700 border border-orange-200 rounded-lg text-[10px] font-black uppercase hover:bg-orange-100 transition-colors"
-                        title="Acak urutan seluruh soal aktif"
-                      >
-                        Acak Soal
-                      </button>
-                      <button 
-                        onClick={handleShuffleOptions}
-                        className="px-3 py-1.5 bg-purple-50 text-purple-700 border border-purple-200 rounded-lg text-[10px] font-black uppercase hover:bg-purple-100 transition-colors"
-                        title="Acak pilihan jawaban (opsi) tiap soal"
-                      >
-                        Acak Opsi
-                      </button>
-                      <button onClick={() => exportQuestionsToExcel(activeQuestions)} className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-[10px] font-black uppercase flex items-center gap-2 shadow-emerald-200 shadow-lg">
-                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0L8 8m4-4v12" /></svg>
-                        Export Excel
-                      </button>
+                      <button onClick={reorderSequentially} className="px-3 py-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg text-[10px] font-black uppercase">Auto-Urut</button>
+                      <button onClick={handleShuffleQuestions} className="px-3 py-1.5 bg-orange-50 text-orange-700 border border-orange-200 rounded-lg text-[10px] font-black uppercase">Acak Soal</button>
+                      <button onClick={handleShuffleOptions} className="px-3 py-1.5 bg-purple-50 text-purple-700 border border-purple-200 rounded-lg text-[10px] font-black uppercase">Acak Opsi</button>
+                      <button onClick={() => exportQuestionsToExcel(activeQuestions)} className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-[10px] font-black uppercase">Export Excel</button>
                       <button onClick={() => downloadSoalPdf(activeQuestions)} className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-[10px] font-black uppercase">Download PDF</button>
                     </div>
                   </div>
@@ -305,14 +275,6 @@ const App: React.FC = () => {
                     <button onClick={() => setActiveTab('trash')} className={`text-sm font-bold pb-2 border-b-2 ${activeTab === 'trash' ? 'border-rose-600 text-rose-600' : 'border-transparent text-slate-400'}`}>Sampah ({trashQuestions.length})</button>
                   </div>
                 </div>
-
-                {repairing && (
-                  <div className="bg-amber-50 p-6 rounded-2xl border-2 border-dashed border-amber-300 flex flex-col items-center justify-center text-center space-y-3">
-                    <div className="w-10 h-10 border-4 border-amber-500 border-t-transparent rounded-full animate-spin"></div>
-                    <p className="text-sm font-black text-amber-900 uppercase tracking-widest">Sistem sedang menganalisis & melengkapi soal...</p>
-                    <p className="text-xs text-amber-700 italic">Membagi proses menjadi batch kecil untuk menghindari Rate Limit.</p>
-                  </div>
-                )}
 
                 {viewMode === 'preview' ? (
                   <QuestionList 
@@ -331,14 +293,13 @@ const App: React.FC = () => {
                 {loading && (
                   <div className="p-12 text-center space-y-4">
                     <div className="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto"></div>
-                    <p className="text-indigo-600 font-black uppercase tracking-widest text-sm">Sedang berdiskusi dengan AI untuk merancang soal...</p>
-                    <p className="text-[10px] text-slate-400">Jika memakan waktu lama, sistem mungkin sedang melakukan antrean retry otomatis.</p>
+                    <p className="text-indigo-600 font-black uppercase tracking-widest text-sm">Sedang merancang soal...</p>
                   </div>
                 )}
               </div>
             ) : (
               <div className="h-[400px] flex items-center justify-center border-2 border-dashed border-slate-200 rounded-3xl bg-white text-slate-400 text-center px-8 italic">
-                Belum ada soal aktif.<br/>Gunakan form di samping atau buka beberapa file JSON.
+                Belum ada soal aktif.
               </div>
             )}
           </div>

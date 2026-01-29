@@ -8,261 +8,111 @@ interface Props {
   onDelete: (id: string) => void;
   onRestore?: (id: string) => void;
   onRegenerate?: (id: string, instructions?: string) => void;
-  onPermanentDelete?: (id: string) => void;
   onQuickUpdate?: (id: string, field: 'order' | 'quizToken', value: string | number) => void;
   onChangeType?: (id: string, newType: QuestionType) => void;
   isTrashView?: boolean;
 }
 
 const QuestionList: React.FC<Props> = ({ 
-  questions, 
-  onEdit, 
-  onDelete, 
-  onRestore, 
-  onRegenerate,
-  onPermanentDelete, 
-  onQuickUpdate,
-  onChangeType,
-  isTrashView = false 
+  questions, onEdit, onDelete, onRestore, onRegenerate, onQuickUpdate, onChangeType, isTrashView = false 
 }) => {
   const [promptingId, setPromptingId] = useState<string | null>(null);
   const [regenPrompt, setRegenPrompt] = useState('');
 
-  if (questions.length === 0) return null;
-
-  const handleStartRegen = (id: string) => {
-    setPromptingId(id);
-    setRegenPrompt('');
-  };
-
-  const handleConfirmRegen = (id: string) => {
-    if (onRegenerate) {
-      onRegenerate(id, regenPrompt);
-    }
-    setPromptingId(null);
+  const isOptionCorrect = (q: EduCBTQuestion, index: number): boolean => {
+    if (q.type === QuestionType.PilihanGanda) return q.correctAnswer === index;
+    if (q.type === QuestionType.MCMA) return Array.isArray(q.correctAnswer) && (q.correctAnswer as number[]).includes(index);
+    if (q.type === QuestionType.BenarSalah || q.type === QuestionType.SesuaiTidakSesuai) return Array.isArray(q.correctAnswer) && (q.correctAnswer as boolean[])[index] === true;
+    return false;
   };
 
   return (
     <div className="space-y-6">
-      {questions.map((q, idx) => {
-        const typeStr = (q.type || "").toLowerCase();
-        const isMultiChoice = 
-          q.type === QuestionType.MCMA || 
-          q.type === QuestionType.Kompleks ||
-          typeStr.includes('jamak') ||
-          typeStr.includes('kompleks');
-        
-        const isBS = q.type === QuestionType.KompleksBS;
-        
+      {questions.map((q) => {
+        const isTableType = q.type === QuestionType.BenarSalah || q.type === QuestionType.SesuaiTidakSesuai;
         return (
-          <div key={q.id} className={`relative bg-white rounded-xl border shadow-sm overflow-hidden transition-all ${isTrashView ? 'opacity-75 border-slate-200 grayscale-[0.3]' : 'border-slate-200 hover:border-indigo-200'}`}>
-            {q.isRegenerating && (
-              <div className="absolute inset-0 bg-white/80 z-20 flex flex-col items-center justify-center backdrop-blur-[1px]">
-                <div className="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mb-2"></div>
-                <span className="text-[10px] font-black text-indigo-700 uppercase tracking-widest text-center px-4">AI sedang merancang ulang soal...</span>
-              </div>
-            )}
-
-            <div className="bg-slate-50 px-4 py-2.5 border-b border-slate-200 flex flex-wrap justify-between items-center gap-4">
+          <div key={q.id} className={`bg-white rounded-xl border shadow-sm overflow-hidden transition-all ${isTrashView ? 'opacity-70' : 'border-slate-200'}`}>
+            <div className="bg-slate-50 px-4 py-2 border-b flex justify-between items-center">
               <div className="flex items-center gap-3">
-                <div className="flex items-center gap-1.5" title="Ubah Nomor Urut">
-                  <span className="text-[10px] font-black text-slate-400">#</span>
-                  <input 
-                    type="number"
-                    className="w-14 px-2 py-1 bg-white border border-slate-200 rounded text-xs font-black text-indigo-600 outline-none focus:ring-2 focus:ring-indigo-400 transition-all text-center"
-                    value={q.order === undefined || q.order === null ? "" : q.order}
-                    placeholder="No"
-                    onChange={(e) => onQuickUpdate && onQuickUpdate(q.id, 'order', e.target.value)}
-                    onFocus={(e) => e.target.select()}
-                  />
-                </div>
-                
-                <div className="flex items-center gap-1.5" title="Ubah Token Paket">
-                  <span className="text-[10px] font-black text-slate-400">TOKEN:</span>
-                  <input 
-                    type="text"
-                    className="w-28 px-2 py-1 bg-white border border-slate-200 rounded text-[10px] font-mono font-bold text-slate-600 outline-none focus:ring-2 focus:ring-indigo-400 transition-all uppercase"
-                    value={q.quizToken || ''}
-                    placeholder="ID Paket"
-                    onChange={(e) => onQuickUpdate && onQuickUpdate(q.id, 'quizToken', e.target.value)}
-                  />
-                </div>
-
-                <div className="h-4 w-[1px] bg-slate-200 mx-1 hidden sm:block"></div>
-                
-                <div className="flex items-center gap-1.5" title="Ubah Tipe Soal (Otomatis via AI)">
-                  <span className="text-[10px] font-black text-slate-400">TIPE:</span>
-                  <select
-                    className="px-2 py-1 bg-white border border-slate-200 rounded text-[10px] font-bold text-slate-600 outline-none focus:ring-2 focus:ring-indigo-400 transition-all cursor-pointer"
-                    value={q.type}
-                    onChange={(e) => onChangeType && onChangeType(q.id, e.target.value as QuestionType)}
-                  >
-                    {Object.values(QuestionType).map(type => (
-                      <option key={type} value={type}>{type}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="h-4 w-[1px] bg-slate-200 mx-1 hidden sm:block"></div>
-                
-                <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 hidden sm:inline">
-                  {q.level}
-                </span>
+                <input type="number" className="w-12 px-2 py-1 bg-white border rounded text-xs font-bold text-center" value={q.order} onChange={(e) => onQuickUpdate?.(q.id, 'order', e.target.value)} />
+                <input type="text" className="w-24 px-2 py-1 bg-white border rounded text-[10px] font-mono uppercase" value={q.quizToken} onChange={(e) => onQuickUpdate?.(q.id, 'quizToken', e.target.value)} />
+                <select className="px-2 py-1 bg-white border rounded text-[10px] font-bold" value={q.type} onChange={(e) => onChangeType?.(q.id, e.target.value as QuestionType)}>
+                  {Object.values(QuestionType).map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
               </div>
-              
-              <div className="flex items-center gap-1">
+              <div className="flex gap-1">
                 {!isTrashView ? (
                   <>
-                    <button 
-                      type="button"
-                      disabled={q.isRegenerating}
-                      onClick={() => handleStartRegen(q.id)}
-                      className={`p-2 rounded-lg transition-colors flex items-center gap-1 ${promptingId === q.id ? 'bg-emerald-600 text-white' : 'text-emerald-600 hover:bg-emerald-50'}`}
-                    >
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-                      <span className="text-[9px] font-black uppercase">{promptingId === q.id ? 'Input...' : 'Ganti'}</span>
-                    </button>
-                    <button 
-                      type="button"
-                      onClick={() => onEdit(q)}
-                      className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors flex items-center gap-1"
-                    >
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
-                      <span className="text-[9px] font-black uppercase">Edit</span>
-                    </button>
-                    <button 
-                      type="button"
-                      onClick={() => onDelete(q.id)}
-                      className="p-2 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors flex items-center gap-1"
-                    >
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                      <span className="text-[9px] font-black uppercase">Hapus</span>
-                    </button>
+                    <button onClick={() => setPromptingId(q.id)} className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg></button>
+                    <button onClick={() => onEdit(q)} className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg></button>
+                    <button onClick={() => onDelete(q.id)} className="p-1.5 text-rose-500 hover:bg-rose-50 rounded"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
                   </>
                 ) : (
-                  <>
-                    <button 
-                      type="button"
-                      onClick={() => onRestore && onRestore(q.id)}
-                      className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors flex items-center gap-1"
-                    >
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-                      <span className="text-[9px] font-black uppercase">Pulihkan</span>
-                    </button>
-                  </>
+                  <button onClick={() => onRestore?.(q.id)} className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded">Pulihkan</button>
                 )}
               </div>
             </div>
 
             {promptingId === q.id && (
-              <div className="bg-emerald-50 p-4 border-b border-emerald-100 flex flex-col gap-3 animate-in slide-in-from-top duration-300">
-                <div className="flex items-center gap-2">
-                   <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></div>
-                   <label className="text-[10px] font-black text-emerald-800 uppercase tracking-widest">Instruksi Khusus untuk Soal Baru:</label>
-                </div>
-                <div className="flex gap-2">
-                  <input 
-                    type="text" 
-                    autoFocus
-                    className="flex-grow px-4 py-2 rounded-lg border-2 border-emerald-200 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-50/50 outline-none text-sm font-medium placeholder:text-emerald-300"
-                    placeholder="Misal: 'Buat konteks lebih sulit'..."
-                    value={regenPrompt}
-                    onChange={(e) => setRegenPrompt(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') handleConfirmRegen(q.id);
-                      if (e.key === 'Escape') setPromptingId(null);
-                    }}
-                  />
-                  <button 
-                    onClick={() => handleConfirmRegen(q.id)}
-                    className="bg-emerald-600 text-white px-4 py-2 rounded-lg text-[10px] font-black uppercase hover:bg-emerald-700 shadow-lg shadow-emerald-200 transition-all active:scale-95"
-                  >
-                    Generate
-                  </button>
-                  <button 
-                    onClick={() => setPromptingId(null)}
-                    className="bg-white text-slate-500 border border-slate-200 px-4 py-2 rounded-lg text-[10px] font-black uppercase hover:bg-slate-50 transition-all"
-                  >
-                    Batal
-                  </button>
-                </div>
+              <div className="p-4 bg-emerald-50 border-b flex gap-2">
+                <input autoFocus className="flex-grow px-3 py-1.5 rounded border text-sm" placeholder="Instruksi revisi..." value={regenPrompt} onChange={(e) => setRegenPrompt(e.target.value)} />
+                <button onClick={() => { onRegenerate?.(q.id, regenPrompt); setPromptingId(null); }} className="bg-emerald-600 text-white px-3 py-1.5 rounded text-xs font-bold uppercase">Go</button>
+                <button onClick={() => setPromptingId(null)} className="text-slate-500 text-xs px-2">Batal</button>
               </div>
             )}
-            
-            <div className="p-6 space-y-6">
-              <div className="flex flex-col md:flex-row gap-6">
-                {q.image && (
-                  <div className="md:w-1/3 w-full h-40 rounded-xl overflow-hidden border border-slate-100 bg-slate-50">
-                    <img src={q.image} className="w-full h-full object-contain" alt="Stimulus" />
-                  </div>
-                )}
-                <div className="flex-1">
-                  {(isMultiChoice || isBS) && (
-                    <p className="text-rose-600 font-black text-xs mb-2 italic flex items-center gap-2">
-                      <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" /></svg>
-                      {isBS ? "(Tentukan Benar atau Salah pada setiap pernyataan)" : "(Jawaban bisa lebih dari satu)"}
-                    </p>
-                  )}
-                  <p className="text-slate-800 font-medium whitespace-pre-wrap text-base leading-relaxed">{q.text}</p>
-                </div>
-              </div>
 
-              {isBS ? (
-                <div className="overflow-x-auto border border-slate-200 rounded-xl">
+            <div className="p-5 space-y-4">
+              <p className="text-slate-800 font-medium whitespace-pre-wrap leading-relaxed">{q.text}</p>
+              
+              {isTableType ? (
+                <div className="border border-slate-200 rounded-lg overflow-hidden">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="bg-slate-50 border-b border-slate-200 text-left">
-                        <th className="px-4 py-3 font-black uppercase text-[10px] text-slate-500">No</th>
-                        <th className="px-4 py-3 font-black uppercase text-[10px] text-slate-500">Pernyataan</th>
-                        <th className="px-4 py-3 font-black uppercase text-[10px] text-slate-500 text-center">{q.tfLabels?.true || 'Benar'}</th>
-                        <th className="px-4 py-3 font-black uppercase text-[10px] text-slate-500 text-center">{q.tfLabels?.false || 'Salah'}</th>
+                      <tr className="bg-slate-50 border-b text-left text-[10px] font-black uppercase text-slate-500">
+                        <th className="px-4 py-2 w-10">#</th>
+                        <th className="px-4 py-2">Pernyataan</th>
+                        <th className="px-4 py-2 text-center w-20">{q.tfLabels?.true}</th>
+                        <th className="px-4 py-2 text-center w-20">{q.tfLabels?.false}</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {q.options.map((opt, i) => (
-                        <tr key={i} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/50">
-                          <td className="px-4 py-3 font-bold text-slate-400">{i+1}</td>
-                          <td className="px-4 py-3 text-slate-700">{opt}</td>
-                          <td className="px-4 py-3 text-center">
-                            <div className={`w-5 h-5 mx-auto rounded border-2 flex items-center justify-center transition-all ${ (q.correctAnswer as boolean[])[i] ? 'bg-emerald-500 border-emerald-500' : 'border-slate-200' }`}>
-                              {(q.correctAnswer as boolean[])[i] && (
-                                <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="4" d="M5 13l4 4L19 7" /></svg>
-                              )}
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 text-center">
-                            <div className={`w-5 h-5 mx-auto rounded border-2 flex items-center justify-center transition-all ${ !(q.correctAnswer as boolean[])[i] ? 'bg-rose-500 border-rose-500' : 'border-slate-200' }`}>
-                              {!(q.correctAnswer as boolean[])[i] && (
-                                <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="4" d="M5 13l4 4L19 7" /></svg>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
+                      {q.options.map((opt, i) => {
+                        const isTrue = (q.correctAnswer as boolean[])[i];
+                        return (
+                          <tr key={i} className="border-b last:border-0">
+                            <td className="px-4 py-2 text-slate-400 font-bold">{i+1}</td>
+                            <td className="px-4 py-2 text-slate-700">{opt}</td>
+                            <td className="px-4 py-2 text-center">
+                              <div className={`w-4 h-4 mx-auto rounded-sm border flex items-center justify-center ${isTrue ? 'bg-emerald-500 border-emerald-500' : 'border-slate-300'}`}>
+                                {isTrue && <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="4" d="M5 13l4 4L19 7" /></svg>}
+                              </div>
+                            </td>
+                            <td className="px-4 py-2 text-center">
+                              <div className={`w-4 h-4 mx-auto rounded-sm border flex items-center justify-center ${!isTrue ? 'bg-rose-500 border-rose-500' : 'border-slate-300'}`}>
+                                {!isTrue && <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="4" d="M5 13l4 4L19 7" /></svg>}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
               ) : (
-                q.options && q.options.length > 0 && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {q.options.map((opt, i) => (
-                      <div key={i} className="p-3 rounded-xl border bg-slate-50 border-slate-100 flex items-center gap-3">
-                        <span className="inline-block w-6 h-6 leading-6 text-center rounded-lg border text-[10px] font-black bg-white text-slate-400 border-slate-200">
-                          {String.fromCharCode(65 + i)}
-                        </span>
-                        <span className="text-sm font-medium text-slate-600">{opt}</span>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  {q.options.map((opt, i) => {
+                    const isCorrect = isOptionCorrect(q, i);
+                    return (
+                      <div key={i} className={`p-2.5 rounded-lg border flex items-center gap-3 ${isCorrect ? 'bg-emerald-50 border-emerald-300' : 'bg-slate-50 border-slate-100'}`}>
+                        <span className={`w-6 h-6 rounded flex items-center justify-center text-[10px] font-black ${isCorrect ? 'bg-emerald-500 text-white' : 'bg-white text-slate-400 border border-slate-200'}`}>{String.fromCharCode(65+i)}</span>
+                        <span className="text-sm font-medium text-slate-700">{opt}</span>
+                        {isCorrect && <svg className="ml-auto w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" /></svg>}
                       </div>
-                    ))}
-                  </div>
-                )
-              )}
-              
-              {q.explanation && (
-                <div className="mt-4 p-4 bg-amber-50 rounded-xl border border-amber-100 text-[11px] text-amber-800 italic">
-                  <span className="font-black uppercase block mb-1">Analisis:</span>
-                  {q.explanation}
+                    );
+                  })}
                 </div>
               )}
+              {q.explanation && <div className="mt-2 p-3 bg-amber-50 rounded-lg text-[11px] text-amber-800 italic border border-amber-100"><span className="font-black uppercase block mb-0.5">Analisis:</span>{q.explanation}</div>}
             </div>
           </div>
         );
