@@ -56,8 +56,8 @@ const App: React.FC = () => {
         return [...repaired, ...trash];
       });
       alert("AI telah melengkapi data yang kosong (Pembahasan, Materi, dan Level).");
-    } catch (err) {
-      setError("Gagal melakukan perbaikan data via AI.");
+    } catch (err: any) {
+      setError(err.message || "Gagal melakukan perbaikan data via AI.");
     } finally {
       setRepairing(false);
     }
@@ -71,8 +71,8 @@ const App: React.FC = () => {
       const lastOrder = questions.length > 0 ? Math.max(...questions.map(q => q.order || 0)) : 0;
       const resultWithOrder = result.map((q, i) => ({ ...q, order: lastOrder + i + 1 }));
       setQuestions(prev => [...prev, ...resultWithOrder]);
-    } catch (err) {
-      setError("Gagal menghasilkan soal. Periksa koneksi atau API Key.");
+    } catch (err: any) {
+      setError(err.message || "Gagal menghasilkan soal. Periksa koneksi atau API Key.");
     } finally {
       setLoading(false);
     }
@@ -101,7 +101,7 @@ const App: React.FC = () => {
       const newQuestion = await regenerateSingleQuestion(target, instructions);
       setQuestions(prev => prev.map(q => q.id === id ? { ...newQuestion, isRegenerating: false } : q));
     } catch (err) {
-      alert("Gagal mengganti soal.");
+      alert("Gagal mengganti soal. AI sedang sibuk atau limit tercapai.");
       setQuestions(prev => prev.map(q => q.id === id ? { ...q, isRegenerating: false } : q));
     }
   };
@@ -112,7 +112,6 @@ const App: React.FC = () => {
         let newCorrectAnswer = q.correctAnswer;
         let newTfLabels = q.tfLabels;
 
-        // Transformasi Kunci Jawaban secara Logis tanpa merusak Teks/Opsi
         if (newType === QuestionType.PilihanGanda) {
           if (Array.isArray(q.correctAnswer)) {
              const firstIndex = q.correctAnswer.findIndex(v => v === true || typeof v === 'number');
@@ -125,7 +124,6 @@ const App: React.FC = () => {
           if (!Array.isArray(q.correctAnswer)) {
             newCorrectAnswer = [typeof q.correctAnswer === 'number' ? q.correctAnswer : 0];
           } else {
-            // Jika sebelumnya Kompleks (bool[]), ubah ke index[]
             if (typeof q.correctAnswer[0] === 'boolean') {
                newCorrectAnswer = (q.correctAnswer as boolean[]).map((v, i) => v ? i : -1).filter(i => i !== -1);
             }
@@ -219,7 +217,15 @@ const App: React.FC = () => {
                 isLoading={loading} 
               />
             </div>
-            {error && <div className="mt-4 p-4 bg-red-50 text-red-700 rounded-xl text-sm">{error}</div>}
+            {error && (
+              <div className="mt-4 p-4 bg-red-50 border-2 border-red-200 text-red-700 rounded-xl text-xs font-bold animate-shake">
+                <div className="flex items-center gap-2 mb-1">
+                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" /></svg>
+                  <span>SISTEM AI TERKENDALA</span>
+                </div>
+                {error}
+              </div>
+            )}
           </div>
 
           <div className="lg:col-span-7">
@@ -263,8 +269,8 @@ const App: React.FC = () => {
                 {repairing && (
                   <div className="bg-amber-50 p-6 rounded-2xl border-2 border-dashed border-amber-300 flex flex-col items-center justify-center text-center space-y-3">
                     <div className="w-10 h-10 border-4 border-amber-500 border-t-transparent rounded-full animate-spin"></div>
-                    <p className="text-sm font-black text-amber-900 uppercase tracking-widest">Sistem sedang menganalisis & melengkapi soal yang cacat...</p>
-                    <p className="text-xs text-amber-700 italic">Harap tunggu, ini mungkin memakan waktu 30-60 detik.</p>
+                    <p className="text-sm font-black text-amber-900 uppercase tracking-widest">Sistem sedang menganalisis & melengkapi soal...</p>
+                    <p className="text-xs text-amber-700 italic">Membagi proses menjadi batch kecil untuk menghindari Rate Limit.</p>
                   </div>
                 )}
 
@@ -282,11 +288,17 @@ const App: React.FC = () => {
                 ) : (
                   <JsonPreview questions={activeQuestions} />
                 )}
-                {loading && <div className="p-8 text-center animate-pulse text-indigo-600 font-black">MENAMBAH/MEMPERBARUI SOAL...</div>}
+                {loading && (
+                  <div className="p-12 text-center space-y-4">
+                    <div className="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto"></div>
+                    <p className="text-indigo-600 font-black uppercase tracking-widest text-sm">Sedang berdiskusi dengan AI untuk merancang soal...</p>
+                    <p className="text-[10px] text-slate-400">Jika memakan waktu lama, sistem mungkin sedang melakukan antrean retry otomatis.</p>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="h-[400px] flex items-center justify-center border-2 border-dashed border-slate-200 rounded-3xl bg-white text-slate-400 text-center px-8 italic">
-                Belum ada soal aktif.<br/>Gunakan form di samping atau buka beberapa file JSON untuk menggabungkannya.
+                Belum ada soal aktif.<br/>Gunakan form di samping atau buka beberapa file JSON.
               </div>
             )}
           </div>

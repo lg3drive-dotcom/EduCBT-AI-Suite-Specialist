@@ -44,9 +44,29 @@ const GenerationForm: React.FC<Props> = ({ onGenerate, onImportJson, isLoading }
     'Fase F': '(Kelas 11-12 SMA)',
   };
 
+  // Helper untuk mendeteksi tipe soal dari teks Excel yang tidak konsisten
+  const mapExcelType = (raw: string): QuestionType => {
+    const s = raw.toString().toLowerCase().trim();
+    if (s.includes('b/s') || s.includes('bs') || s.includes('benar') || s.includes('salah')) {
+      return QuestionType.KompleksBS;
+    }
+    if (s.includes('kompleks')) {
+      return QuestionType.Kompleks;
+    }
+    if (s.includes('jamak') || s.includes('mcma')) {
+      return QuestionType.MCMA;
+    }
+    if (s.includes('isian') || s.includes('isian singkat')) {
+      return QuestionType.Isian;
+    }
+    if (s.includes('uraian') || s.includes('essay')) {
+      return QuestionType.Uraian;
+    }
+    return QuestionType.PilihanGanda;
+  };
+
   const parseExcelQuestions = (data: any[]): EduCBTQuestion[] => {
     return data.map((row, i) => {
-      // Header detection dengan variasi nama
       const tipeRaw = row["Tipe Soal"] || row["Tipe"] || row["tipe"] || "";
       const level = (row["Level"] || row["level"] || "L1").toString().toUpperCase();
       const teks = (row["Teks Soal"] || row["Soal"] || row["Pertanyaan"] || row["soal"] || "").toString();
@@ -69,20 +89,13 @@ const GenerationForm: React.FC<Props> = ({ onGenerate, onImportJson, isLoading }
       ].map(o => o ? o.toString() : null);
 
       let kunci = (row["Kunci Jawaban"] || row["Kunci"] || row["kunci"] || "").toString();
-      let tipe = tipeRaw.toString();
-
-      // Autodetect Tipe jika kosong berdasarkan kunci
-      if (!tipe) {
-        if (kunci.includes(',') || kunci.includes(';')) {
-          tipe = (kunci.includes('B') || kunci.includes('S')) ? QuestionType.KompleksBS : QuestionType.MCMA;
-        } else {
-          tipe = QuestionType.PilihanGanda;
-        }
-      }
+      
+      // Gunakan mapper cerdas untuk menentukan tipe
+      let tipe = mapExcelType(tipeRaw);
 
       let correctAnswer: any = 0;
 
-      // Normalisasi Kunci Jawaban
+      // Normalisasi Kunci Jawaban berdasarkan Tipe yang sudah divalidasi
       if (tipe === QuestionType.PilihanGanda) {
         correctAnswer = (kunci.toUpperCase().trim().charCodeAt(0) - 65);
         if (isNaN(correctAnswer) || correctAnswer < 0) correctAnswer = 0;
@@ -91,8 +104,21 @@ const GenerationForm: React.FC<Props> = ({ onGenerate, onImportJson, isLoading }
       } else if (tipe === QuestionType.KompleksBS) {
         correctAnswer = kunci.split(/[,;|]/).map(k => {
           const val = k.trim().toUpperCase();
-          return val === 'B' || val === 'TRUE' || val === 'BENAR' || val === 'S' ? (val !== 'S') : false;
+          // Anggap 'B', 'BENAR', 'TRUE', '1', atau 'Y' sebagai TRUE
+          return (val === 'B' || val === 'TRUE' || val === 'BENAR' || val === '1' || val === 'Y');
         });
+        
+        // Pastikan jumlah kunci sama dengan jumlah opsi pernyataan
+        if (correctAnswer.length < options.length) {
+          const padding = new Array(options.length - correctAnswer.length).fill(false);
+          correctAnswer = [...correctAnswer, ...padding];
+        }
+      } else if (tipe === QuestionType.Kompleks) {
+        // Pilihan Ganda Kompleks (Index-based checklist)
+        correctAnswer = kunci.split(/[,;|]/).map(k => {
+           const idx = k.trim().toUpperCase().charCodeAt(0) - 65;
+           return !isNaN(idx) && idx >= 0 ? idx : -1;
+        }).filter(idx => idx !== -1);
       } else {
         correctAnswer = kunci;
       }
@@ -138,7 +164,7 @@ const GenerationForm: React.FC<Props> = ({ onGenerate, onImportJson, isLoading }
         const imported = parseExcelQuestions(data);
         if (imported.length > 0) {
           onImportJson(imported);
-          alert(`${imported.length} soal terbaca. Jika ada kolom kosong, gunakan tombol 'Lengkapi via AI' di daftar soal.`);
+          alert(`${imported.length} soal terbaca. Deteksi tipe soal kini lebih cerdas.`);
         }
       } catch (err) {
         console.error(err);
