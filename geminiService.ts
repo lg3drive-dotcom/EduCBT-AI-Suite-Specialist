@@ -45,8 +45,8 @@ const SINGLE_QUESTION_SCHEMA = {
   properties: {
     type: { type: Type.STRING },
     level: { type: Type.STRING },
-    stimulusText: { type: Type.STRING, description: "Teks bacaan atau stimulus untuk satu atau beberapa soal" },
-    text: { type: Type.STRING, description: "Pertanyaan inti" },
+    stimulusText: { type: Type.STRING },
+    text: { type: Type.STRING },
     explanation: { type: Type.STRING },
     material: { type: Type.STRING },
     quizToken: { type: Type.STRING },
@@ -134,13 +134,53 @@ export const generateEduCBTQuestions = async (config: GenerationConfig): Promise
   }
 };
 
+export const suggestLevel = async (questionText: string, options: string[]): Promise<string> => {
+  const prompt = `Analisis tingkat kognitif soal berikut:
+  Soal: ${questionText}
+  Opsi: ${options.join(', ')}
+  
+  Tentukan levelnya: L1 (Pemahaman/Ingatan), L2 (Aplikasi), atau L3 (Penalaran/HOTS). 
+  HANYA BALAS DENGAN KODE LEVELNYA SAJA (Contoh: L3).`;
+
+  try {
+    const response = await smartGeminiCall({
+      contents: prompt,
+      config: {
+        systemInstruction: "Anda adalah pakar asesmen pendidikan. Balas hanya dengan 'L1', 'L2', atau 'L3'."
+      }
+    });
+    return response.text.trim().substring(0, 2).toUpperCase() || "L1";
+  } catch {
+    return "L1";
+  }
+};
+
+export const generateSingleExplanation = async (question: EduCBTQuestion): Promise<string> => {
+  const prompt = `Buatlah analisis jawaban (pembahasan) yang mendalam dan edukatif untuk soal berikut:
+  Pertanyaan: ${question.text}
+  Opsi: ${question.options.join(' | ')}
+  Tipe: ${question.type}
+  Kunci Jawaban: ${JSON.stringify(question.correctAnswer)}
+  
+  Berikan penjelasan mengapa jawaban tersebut benar dan mengapa opsi lain salah (jika relevan). Gunakan bahasa Indonesia yang baku dan profesional. Maksimal 3-4 kalimat.`;
+
+  try {
+    const response = await smartGeminiCall({
+      contents: prompt,
+      config: {
+        systemInstruction: "Anda adalah pakar pedagogi. Buatlah pembahasan soal yang membantu siswa memahami konsep."
+      }
+    });
+    return cleanFormatting(response.text);
+  } catch {
+    return "Gagal membuat pembahasan otomatis.";
+  }
+};
+
 const normalizeQuestion = (q: any, config: any): EduCBTQuestion => {
   let type = q.type;
   let correctedAnswer = q.correctAnswer;
   const optionsCount = q.options?.length || 4;
-  
-  // Logic normalisasi sama seperti sebelumnya (MCMA, PG, Tabel) ...
-  // [Kode normalisasi tetap sama agar fungsionalitas terjaga]
 
   if (type === QuestionType.BenarSalah || type === QuestionType.SesuaiTidakSesuai) {
     q.tfLabels = type === QuestionType.BenarSalah ? { "true": "Benar", "false": "Salah" } : { "true": "Sesuai", "false": "Tidak Sesuai" };
@@ -166,12 +206,55 @@ const normalizeQuestion = (q: any, config: any): EduCBTQuestion => {
   };
 };
 
+/**
+ * Fix: Implementing regenerateSingleQuestion to replace a question with AI generation.
+ */
 export const regenerateSingleQuestion = async (oldQuestion: EduCBTQuestion, customInstructions?: string): Promise<EduCBTQuestion> => {
-    // Implementasi regenerasi tetap ada...
-    return oldQuestion; 
+    const prompt = `Regenerasi soal berikut dengan materi dan level yang sama namun teks dan variasi berbeda.
+    SOAL LAMA: ${JSON.stringify(oldQuestion)}
+    ${customInstructions ? `INSTRUKSI KHUSUS: ${customInstructions}` : ''}
+    
+    KEMBALIKAN DALAM FORMAT JSON OBJEK SOAL YANG VALID.`;
+
+    try {
+      const response = await smartGeminiCall({
+        contents: prompt,
+        config: {
+          systemInstruction: SYSTEM_INSTRUCTION,
+          responseMimeType: "application/json",
+          responseSchema: SINGLE_QUESTION_SCHEMA
+        }
+      });
+      const parsed = JSON.parse(response.text || "{}");
+      return normalizeQuestion(parsed, { subject: oldQuestion.subject, phase: oldQuestion.phase, material: oldQuestion.material, quizToken: oldQuestion.quizToken });
+    } catch (err) {
+      console.error(err);
+      throw new Error("Gagal regenerasi soal.");
+    }
 };
 
+/**
+ * Fix: Implementing repairQuestions to complement missing fields in question data via AI.
+ */
 export const repairQuestions = async (questions: EduCBTQuestion[]): Promise<EduCBTQuestion[]> => {
-    // Implementasi repair tetap ada...
-    return questions;
+    const prompt = `Lengkapi field yang kosong atau kurang tepat (seperti pembahasan, materi, level) pada daftar soal berikut.
+    DATA: ${JSON.stringify(questions)}
+    
+    KEMBALIKAN DALAM FORMAT JSON ARRAY SOAL YANG LENGKAP.`;
+
+    try {
+      const response = await smartGeminiCall({
+        contents: prompt,
+        config: {
+          systemInstruction: SYSTEM_INSTRUCTION,
+          responseMimeType: "application/json",
+          responseSchema: QUESTIONS_ARRAY_SCHEMA
+        }
+      });
+      const parsed = JSON.parse(response.text || "[]");
+      return parsed.map((q: any) => normalizeQuestion(q, { subject: q.subject, phase: q.phase, material: q.material, quizToken: q.quizToken }));
+    } catch (err) {
+      console.error(err);
+      throw new Error("Gagal perbaikan data.");
+    }
 };
