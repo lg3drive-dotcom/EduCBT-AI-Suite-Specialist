@@ -186,6 +186,27 @@ const App: React.FC = () => {
     setQuestions(prev => prev.map(q => q.id === id ? { ...q, isDeleted } : q));
   };
 
+  const handleDeleteAllActive = () => {
+    if (!activeQuestions.length) return;
+    if (confirm(`Pindahkan semua soal aktif (${activeQuestions.length}) ke sampah?`)) {
+      setQuestions(prev => prev.map(q => ({ ...q, isDeleted: true })));
+    }
+  };
+
+  const handleEmptyTrash = () => {
+    if (!trashQuestions.length) return;
+    if (confirm(`HAPUS PERMANEN semua soal di sampah (${trashQuestions.length})? Tindakan ini tidak bisa dibatalkan.`)) {
+      setQuestions(prev => prev.filter(q => !q.isDeleted));
+    }
+  };
+
+  const handleResetTotal = () => {
+    if (confirm("Mulai dari awal? Semua data soal akan DIHAPUS PERMANEN.")) {
+      setQuestions([]);
+      setError(null);
+    }
+  };
+
   const reorderSequentially = () => {
     setQuestions(prev => {
       const active = [...prev].filter(q => !q.isDeleted).sort((a, b) => {
@@ -230,6 +251,11 @@ const App: React.FC = () => {
             <div className="bg-white p-6 rounded-xl border border-indigo-100 shadow-sm sticky top-20">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xl font-bold text-slate-900">Konfigurator Soal</h2>
+                {questions.length > 0 && (
+                  <button onClick={handleResetTotal} className="p-2 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all" title="Reset Aplikasi (Hapus Semua)">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                  </button>
+                )}
               </div>
               <GenerationForm 
                 onGenerate={handleGenerate} 
@@ -254,20 +280,27 @@ const App: React.FC = () => {
                       <button onClick={() => setViewMode('json')} className={`px-4 py-1 rounded-md text-sm font-bold ${viewMode === 'json' ? 'bg-white text-indigo-600' : 'text-slate-600'}`}>JSON</button>
                     </div>
                     <div className="flex gap-2 flex-wrap justify-end">
-                      {hasEmptyFields && activeTab === 'active' && (
-                        <button 
-                          onClick={handleSmartRepair}
-                          disabled={repairing}
-                          className="px-3 py-1.5 bg-amber-600 text-white rounded-lg text-[10px] font-black uppercase flex items-center gap-2 hover:bg-amber-700 transition-colors shadow-lg"
-                        >
-                          {repairing ? '...' : '✨ Lengkapi via AI'}
-                        </button>
+                      {activeTab === 'active' ? (
+                        <>
+                          {hasEmptyFields && (
+                            <button 
+                              onClick={handleSmartRepair}
+                              disabled={repairing}
+                              className="px-3 py-1.5 bg-amber-600 text-white rounded-lg text-[10px] font-black uppercase flex items-center gap-2 hover:bg-amber-700 transition-colors shadow-lg"
+                            >
+                              {repairing ? '...' : '✨ Lengkapi via AI'}
+                            </button>
+                          )}
+                          <button onClick={reorderSequentially} className="px-3 py-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg text-[10px] font-black uppercase">Auto-Urut</button>
+                          <button onClick={handleShuffleQuestions} className="px-3 py-1.5 bg-orange-50 text-orange-700 border border-orange-200 rounded-lg text-[10px] font-black uppercase">Acak Soal</button>
+                          <button onClick={handleShuffleOptions} className="px-3 py-1.5 bg-purple-50 text-purple-700 border border-purple-200 rounded-lg text-[10px] font-black uppercase">Acak Opsi</button>
+                          <button onClick={() => exportQuestionsToExcel(activeQuestions)} className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-[10px] font-black uppercase">Export Excel</button>
+                          <button onClick={() => downloadSoalPdf(activeQuestions)} className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-[10px] font-black uppercase">Download PDF</button>
+                          <button onClick={handleDeleteAllActive} className="px-3 py-1.5 bg-rose-50 text-rose-600 border border-rose-200 rounded-lg text-[10px] font-black uppercase hover:bg-rose-100 transition-all">Hapus Semua</button>
+                        </>
+                      ) : (
+                        <button onClick={handleEmptyTrash} className="px-3 py-1.5 bg-rose-600 text-white rounded-lg text-[10px] font-black uppercase hover:bg-rose-700 shadow-md">Kosongkan Sampah</button>
                       )}
-                      <button onClick={reorderSequentially} className="px-3 py-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg text-[10px] font-black uppercase">Auto-Urut</button>
-                      <button onClick={handleShuffleQuestions} className="px-3 py-1.5 bg-orange-50 text-orange-700 border border-orange-200 rounded-lg text-[10px] font-black uppercase">Acak Soal</button>
-                      <button onClick={handleShuffleOptions} className="px-3 py-1.5 bg-purple-50 text-purple-700 border border-purple-200 rounded-lg text-[10px] font-black uppercase">Acak Opsi</button>
-                      <button onClick={() => exportQuestionsToExcel(activeQuestions)} className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-[10px] font-black uppercase">Export Excel</button>
-                      <button onClick={() => downloadSoalPdf(activeQuestions)} className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-[10px] font-black uppercase">Download PDF</button>
                     </div>
                   </div>
                   <div className="flex gap-4 border-t pt-4">

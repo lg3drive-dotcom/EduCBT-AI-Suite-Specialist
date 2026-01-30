@@ -28,10 +28,11 @@ Tugas: Membuat soal evaluasi berkualitas tinggi dalam format JSON array yang VAL
    - 'type': "URAIAN"
    - 'correctAnswer': String penjelasan kunci.
 
-### ATURAN TEKNIS ###
-- UNTUK TIPE TABEL (Benar/Salah & Sesuai/Tidak Sesuai): 'options' berisi daftar pernyataan, dan 'correctAnswer' HARUS array boolean dengan panjang yang sama.
-- JANGAN gunakan Markdown (**, *) atau HTML.
-- Gunakan teks polos (Plain Text).
+### ATURAN TEKNIS KRUSIAL ###
+- UNTUK TIPE TABEL (Benar/Salah & Sesuai/Tidak Sesuai): 'options' berisi daftar pernyataan (minimal 3), dan 'correctAnswer' HARUS array boolean dengan panjang yang sama.
+- DILARANG memasukkan teks instruksi atau penjelasan format ke dalam nilai field JSON manapun.
+- 'tfLabels' HARUS HANYA berisi kata "Benar" & "Salah" atau "Sesuai" & "Tidak Sesuai".
+- Gunakan teks polos (Plain Text), hindari Markdown.
 `;
 
 const SINGLE_QUESTION_SCHEMA = {
@@ -119,10 +120,12 @@ ${requestedTypes}
 ### KONTEKS:
 Materi: ${config.material}
 Token: ${config.quizToken}
+${config.referenceText ? `Gunakan teks referensi ini sebagai dasar: ${config.referenceText.substring(0, 5000)}` : ''}
 ${config.specialInstructions ? `Instruksi Khusus: ${config.specialInstructions}` : ''}
 
 ### PERINTAH KRUSIAL:
-Untuk tipe "(Benar/Salah)" dan "(Sesuai/Tidak Sesuai)", 'correctAnswer' WAJIB berupa array boolean [true, false, ...] yang memetakan setiap baris pernyataan di 'options'.`;
+- Tipe "(Benar/Salah)" dan "(Sesuai/Tidak Sesuai)" WAJIB memiliki 'correctAnswer' berupa array boolean [true, false, ...] sesuai urutan 'options'.
+- Pastikan 'tfLabels' BERSIH dari teks instruksi AI.`;
 
   try {
     const response = await smartGeminiCall({
@@ -153,14 +156,21 @@ const normalizeQuestion = (q: any, config: any): EduCBTQuestion => {
     }
   }
 
-  // Normalisasi Tipe Tabel Boolean
+  // Normalisasi Tipe Tabel Boolean & Paksa Label Bersih
   if (type === QuestionType.BenarSalah || type === QuestionType.SesuaiTidakSesuai) {
+    // Paksa labels standar untuk menghindari halusinasi instruksi AI
+    if (type === QuestionType.BenarSalah) {
+      q.tfLabels = { "true": "Benar", "false": "Salah" };
+    } else {
+      q.tfLabels = { "true": "Sesuai", "false": "Tidak Sesuai" };
+    }
+
     if (!Array.isArray(correctedAnswer)) {
       const arr = new Array(optionsCount).fill(false);
       if (typeof correctedAnswer === 'string') {
         correctedAnswer.split(/[,;|]/).forEach((p, i) => {
           const s = p.trim().toUpperCase();
-          if (s === 'B' || s === 'TRUE' || s === 'Y' || s === 'Sesuai' || s === 'S') arr[i] = true;
+          if (s === 'B' || s === 'TRUE' || s === 'Y' || s === 'SESUAI' || s === 'S') arr[i] = true;
         });
       }
       correctedAnswer = arr;
@@ -170,7 +180,7 @@ const normalizeQuestion = (q: any, config: any): EduCBTQuestion => {
         if (typeof val === 'number') { if (val < optionsCount) arr[val] = true; }
         else {
            const s = String(val).toUpperCase();
-           if (s === 'B' || s === 'TRUE' || s === 'Sesuai' || s === 'S') arr[i] = true;
+           if (s === 'B' || s === 'TRUE' || s === 'SESUAI' || s === 'S') arr[i] = true;
         }
       });
       correctedAnswer = arr;
@@ -180,11 +190,6 @@ const normalizeQuestion = (q: any, config: any): EduCBTQuestion => {
       const arr = new Array(optionsCount).fill(false);
       for(let i=0; i < optionsCount; i++) if(correctedAnswer[i] === true) arr[i] = true;
       correctedAnswer = arr;
-    }
-
-    if (!q.tfLabels) {
-      if (type === QuestionType.BenarSalah) q.tfLabels = { "true": "Benar", "false": "Salah" };
-      else q.tfLabels = { "true": "Sesuai", "false": "Tidak Sesuai" };
     }
   }
 
@@ -228,7 +233,8 @@ const normalizeQuestion = (q: any, config: any): EduCBTQuestion => {
     material: q.material || config.material,
     isDeleted: false,
     createdAt: q.createdAt || Date.now(),
-    order: q.order || 1
+    order: q.order || 1,
+    tfLabels: q.tfLabels
   };
 };
 

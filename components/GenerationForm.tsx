@@ -172,7 +172,7 @@ const GenerationForm: React.FC<Props> = ({ onGenerate, onImportJson, isLoading }
         </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100">
           <label className="block text-[10px] font-black text-blue-700 uppercase mb-2">Mata Pelajaran</label>
           <input required type="text" className="w-full px-4 py-2 rounded-lg border border-blue-200 bg-white text-sm font-bold outline-none focus:ring-2 focus:ring-blue-400" value={formData.subject} onChange={(e) => setFormData({ ...formData, subject: e.target.value })} />
@@ -187,6 +187,10 @@ const GenerationForm: React.FC<Props> = ({ onGenerate, onImportJson, isLoading }
             <option value="Fase E">Fase E (SMA 10)</option>
             <option value="Fase F">Fase F (SMA 11-12)</option>
           </select>
+        </div>
+        <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100">
+          <label className="block text-[10px] font-black text-blue-700 uppercase mb-2">Token Paket</label>
+          <input required type="text" placeholder="Contoh: PAS-01" className="w-full px-4 py-2 rounded-lg border border-blue-200 bg-white text-sm font-bold outline-none focus:ring-2 focus:ring-blue-400 uppercase" value={formData.quizToken} onChange={(e) => setFormData({ ...formData, quizToken: e.target.value.toUpperCase() })} />
         </div>
       </div>
 
