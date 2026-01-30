@@ -35,32 +35,31 @@ Tugas: Membuat soal evaluasi berkualitas tinggi dalam format JSON array yang VAL
 - Gunakan teks polos (Plain Text), hindari Markdown.
 `;
 
-const SINGLE_QUESTION_SCHEMA = {
-  type: Type.OBJECT,
-  properties: {
-    type: { type: Type.STRING },
-    level: { type: Type.STRING },
-    text: { type: Type.STRING },
-    explanation: { type: Type.STRING },
-    material: { type: Type.STRING },
-    quizToken: { type: Type.STRING },
-    order: { type: Type.INTEGER },
-    options: { type: Type.ARRAY, items: { type: Type.STRING } },
-    correctAnswer: { type: Type.STRING, description: "Indeks (PG), Array Indeks (MCMA), Array Boolean (Tabel), atau String" },
-    tfLabels: {
-      type: Type.OBJECT,
-      properties: {
-        true: { type: Type.STRING },
-        false: { type: Type.STRING }
-      }
-    }
-  },
-  required: ["type", "level", "text", "options", "correctAnswer", "explanation", "material", "quizToken", "order"]
-};
-
 const QUESTIONS_ARRAY_SCHEMA = {
   type: Type.ARRAY,
-  items: SINGLE_QUESTION_SCHEMA
+  items: {
+    type: Type.OBJECT,
+    properties: {
+      type: { type: Type.STRING },
+      level: { type: Type.STRING },
+      text: { type: Type.STRING },
+      explanation: { type: Type.STRING },
+      material: { type: Type.STRING },
+      quizToken: { type: Type.STRING },
+      order: { type: Type.INTEGER },
+      options: { type: Type.ARRAY, items: { type: Type.STRING } },
+      // correctAnswer is kept as STRING in schema for flexibility, normalizeQuestion handles type conversion.
+      correctAnswer: { type: Type.STRING },
+      tfLabels: {
+        type: Type.OBJECT,
+        properties: {
+          true: { type: Type.STRING },
+          false: { type: Type.STRING }
+        }
+      }
+    },
+    required: ["type", "level", "text", "options", "correctAnswer", "explanation", "material", "quizToken", "order"]
+  }
 };
 
 const cleanFormatting = (str: string) => {
@@ -75,9 +74,11 @@ const cleanFormatting = (str: string) => {
     .trim();
 };
 
+// Internal helper for making Gemini API calls with retries and model rotation.
 async function smartGeminiCall(payload: any, maxRetries = 4) {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   let lastError: any;
+  // Complex reasoning tasks use 'gemini-3-pro-preview'.
   const models = ['gemini-3-pro-preview', 'gemini-3-flash-preview'];
 
   for (const modelName of models) {
@@ -91,10 +92,9 @@ async function smartGeminiCall(payload: any, maxRetries = 4) {
       } catch (error: any) {
         lastError = error;
         const msg = (error?.message || "").toLowerCase();
-        if (msg.includes("quota") || msg.includes("429") || msg.includes("overloaded") || msg.includes("rate limit")) {
+        if (msg.includes("quota") || msg.includes("429") || msg.includes("overloaded")) {
           if (i === maxRetries - 1) continue;
-          const waitTime = (i + 1) * 3000;
-          await new Promise(r => setTimeout(r, waitTime));
+          await new Promise(r => setTimeout(r, (i + 1) * 3000));
           continue;
         }
         throw error;
@@ -107,29 +107,37 @@ async function smartGeminiCall(payload: any, maxRetries = 4) {
 export const generateEduCBTQuestions = async (config: GenerationConfig): Promise<EduCBTQuestion[]> => {
   const requestedTypes = Object.entries(config.typeCounts)
     .filter(([_, count]) => count > 0)
-    .map(([type, count]) => `- ${type}: HARUS ${count} SOAL`)
+    .map(([type, count]) => `- ${type}: ${count} SOAL`)
     .join('\n');
 
   const total = (Object.values(config.typeCounts) as number[]).reduce((a, b) => a + b, 0);
 
-  const prompt = `BUAT TOTAL ${total} SOAL untuk ${config.subject}.
+  const textPrompt = `BUAT TOTAL ${total} SOAL untuk ${config.subject}.
+  Materi: ${config.material}
+  Token: ${config.quizToken}
   
-### PEMBAGIAN TIPE WAJIB:
+### PEMBAGIAN TIPE:
 ${requestedTypes}
 
-### KONTEKS:
-Materi: ${config.material}
-Token: ${config.quizToken}
-${config.referenceText ? `Gunakan teks referensi ini sebagai dasar: ${config.referenceText.substring(0, 5000)}` : ''}
-${config.specialInstructions ? `Instruksi Khusus: ${config.specialInstructions}` : ''}
+### KONTEKS REFERENSI:
+${config.referenceText ? `Gunakan teks ini sebagai dasar: ${config.referenceText.substring(0, 5000)}` : ''}
+${config.referenceImage ? `Lihat gambar yang saya lampirkan untuk membuat soal berdasarkan stimulus visual (grafik/tabel/infografis/buku paket) tersebut.` : ''}
+${config.specialInstructions ? `Instruksi Khusus: ${config.specialInstructions}` : ''}`;
 
-### PERINTAH KRUSIAL:
-- Tipe "(Benar/Salah)" dan "(Sesuai/Tidak Sesuai)" WAJIB memiliki 'correctAnswer' berupa array boolean [true, false, ...] sesuai urutan 'options'.
-- Pastikan 'tfLabels' BERSIH dari teks instruksi AI.`;
+  const parts: any[] = [{ text: textPrompt }];
+  
+  if (config.referenceImage) {
+    parts.push({
+      inlineData: {
+        data: config.referenceImage.data,
+        mimeType: config.referenceImage.mimeType
+      }
+    });
+  }
 
   try {
     const response = await smartGeminiCall({
-      contents: prompt,
+      contents: { parts },
       config: {
         systemInstruction: SYSTEM_INSTRUCTION,
         responseMimeType: "application/json",
@@ -140,7 +148,7 @@ ${config.specialInstructions ? `Instruksi Khusus: ${config.specialInstructions}`
     const parsed = JSON.parse(response.text || "[]");
     return parsed.map((q: any) => normalizeQuestion(q, config));
   } catch (error: any) {
-    throw new Error("Gagal generate soal. AI sedang sibuk atau limit tercapai.");
+    throw new Error("Gagal generate soal. Pastikan koneksi stabil.");
   }
 };
 
@@ -148,239 +156,157 @@ const normalizeQuestion = (q: any, config: any): EduCBTQuestion => {
   let type = q.type;
   let correctedAnswer = q.correctAnswer;
   const optionsCount = q.options?.length || 4;
-  
-  if (typeof correctedAnswer === 'string') {
-    const trimmed = correctedAnswer.trim();
-    if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
-      try { correctedAnswer = JSON.parse(trimmed); } catch(e) {}
-    }
-  }
 
-  // Normalisasi Tipe Tabel Boolean & Paksa Label Bersih
+  // Handle various response types for correctAnswer from Gemini.
   if (type === QuestionType.BenarSalah || type === QuestionType.SesuaiTidakSesuai) {
-    // Paksa labels standar untuk menghindari halusinasi instruksi AI
-    if (type === QuestionType.BenarSalah) {
-      q.tfLabels = { "true": "Benar", "false": "Salah" };
-    } else {
-      q.tfLabels = { "true": "Sesuai", "false": "Tidak Sesuai" };
-    }
-
+    q.tfLabels = type === QuestionType.BenarSalah ? { "true": "Benar", "false": "Salah" } : { "true": "Sesuai", "false": "Tidak Sesuai" };
     if (!Array.isArray(correctedAnswer)) {
-      const arr = new Array(optionsCount).fill(false);
-      if (typeof correctedAnswer === 'string') {
-        correctedAnswer.split(/[,;|]/).forEach((p, i) => {
-          const s = p.trim().toUpperCase();
-          if (s === 'B' || s === 'TRUE' || s === 'Y' || s === 'SESUAI' || s === 'S') arr[i] = true;
-        });
-      }
-      correctedAnswer = arr;
-    } else if (correctedAnswer.length > 0 && typeof correctedAnswer[0] !== 'boolean') {
-      const arr = new Array(optionsCount).fill(false);
-      correctedAnswer.forEach((val: any, i: number) => {
-        if (typeof val === 'number') { if (val < optionsCount) arr[val] = true; }
-        else {
-           const s = String(val).toUpperCase();
-           if (s === 'B' || s === 'TRUE' || s === 'SESUAI' || s === 'S') arr[i] = true;
+      if (typeof correctedAnswer === 'string' && (correctedAnswer.includes('[') || correctedAnswer.includes(','))) {
+        try {
+          correctedAnswer = JSON.parse(correctedAnswer.includes('[') ? correctedAnswer : `[${correctedAnswer}]`);
+        } catch {
+          correctedAnswer = new Array(optionsCount).fill(false);
         }
-      });
-      correctedAnswer = arr;
-    }
-
-    if (correctedAnswer.length !== optionsCount) {
-      const arr = new Array(optionsCount).fill(false);
-      for(let i=0; i < optionsCount; i++) if(correctedAnswer[i] === true) arr[i] = true;
-      correctedAnswer = arr;
-    }
-  }
-
-  // Normalisasi MCMA
-  else if (type === QuestionType.MCMA) {
-    if (!Array.isArray(correctedAnswer)) {
-      if (typeof correctedAnswer === 'string') {
-        correctedAnswer = correctedAnswer.split(/[,;|]/).map(p => {
-          const s = p.trim().toUpperCase();
-          if (!isNaN(parseInt(s))) return parseInt(s);
-          return s.charCodeAt(0) - 65;
-        }).filter(n => !isNaN(n) && n >= 0 && n < optionsCount);
       } else {
-        correctedAnswer = [Number(correctedAnswer) || 0];
+        correctedAnswer = new Array(optionsCount).fill(false);
       }
     }
-    if (correctedAnswer.length === 0) correctedAnswer = [0];
-  }
-
-  // Normalisasi PG
-  else if (type === QuestionType.PilihanGanda) {
-    if (Array.isArray(correctedAnswer)) {
-      correctedAnswer = typeof correctedAnswer[0] === 'boolean' ? correctedAnswer.findIndex(v => v === true) : Number(correctedAnswer[0]);
-    } else if (typeof correctedAnswer === 'string') {
-      const s = correctedAnswer.trim().toUpperCase();
-      correctedAnswer = !isNaN(parseInt(s)) ? parseInt(s) : s.charCodeAt(0) - 65;
+  } else if (type === QuestionType.MCMA) {
+    if (!Array.isArray(correctedAnswer)) {
+      if (typeof correctedAnswer === 'string' && (correctedAnswer.includes('[') || correctedAnswer.includes(','))) {
+        try {
+          correctedAnswer = JSON.parse(correctedAnswer.includes('[') ? correctedAnswer : `[${correctedAnswer}]`);
+        } catch {
+          correctedAnswer = [0];
+        }
+      } else if (typeof correctedAnswer === 'number') {
+        correctedAnswer = [correctedAnswer];
+      } else {
+        correctedAnswer = [0];
+      }
     }
-    if (isNaN(correctedAnswer as number)) correctedAnswer = 0;
+  } else if (type === QuestionType.PilihanGanda) {
+    if (typeof correctedAnswer !== 'number') {
+      const parsed = parseInt(correctedAnswer);
+      correctedAnswer = isNaN(parsed) ? 0 : parsed;
+    }
   }
 
   return {
     ...q,
     id: q.id || `q_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-    type: type,
-    text: cleanFormatting(q.text || q.question),
+    text: cleanFormatting(q.text || ""),
     explanation: cleanFormatting(q.explanation),
     correctAnswer: correctedAnswer,
-    subject: q.subject || config.subject,
-    phase: q.phase || config.phase,
+    subject: config.subject,
+    phase: config.phase,
     quizToken: (q.quizToken || config.quizToken || "").toString().toUpperCase(),
     material: q.material || config.material,
     isDeleted: false,
-    createdAt: q.createdAt || Date.now(),
+    createdAt: Date.now(),
     order: q.order || 1,
     tfLabels: q.tfLabels
   };
 };
 
-export const generateExplanationForQuestion = async (q: EduCBTQuestion): Promise<string> => {
-  const prompt = `Jelaskan secara logis kenapa kunci jawaban berikut benar untuk soal ini:
-  SOAL: "${q.text}"
-  KUNCI: ${JSON.stringify(q.correctAnswer)}
-  TIPE: ${q.type}`;
-
+/**
+ * Generates an explanation for a given question using AI.
+ */
+export const generateExplanationForQuestion = async (q: any): Promise<string> => {
+  const prompt = `Berikan penjelasan ringkas dan logis untuk kunci jawaban soal berikut ini:\n\n${JSON.stringify(q)}`;
   try {
     const response = await smartGeminiCall({
-      contents: prompt,
+      contents: { parts: [{ text: prompt }] },
       config: {
-        systemInstruction: "Berikan penjelasan singkat 1-2 kalimat dalam teks polos."
+        systemInstruction: "Anda adalah pakar pedagogi yang memberikan penjelasan kunci jawaban yang mendalam namun mudah dipahami.",
       }
     });
-    return cleanFormatting(response.text || "");
-  } catch (err) {
-    return "Analisis otomatis tidak tersedia.";
+    return response.text?.trim() || "Penjelasan tidak tersedia.";
+  } catch {
+    return "Gagal menghasilkan penjelasan.";
   }
 };
 
-export const analyzeLevelForQuestion = async (q: EduCBTQuestion): Promise<string> => {
-  const prompt = `Analisis LEVEL KOGNITIF (L1/L2/L3) soal berikut:
-  SOAL: "${q.text}"`;
-
+/**
+ * Analyzes the cognitive level (L1, L2, L3) of a question using AI.
+ */
+export const analyzeLevelForQuestion = async (q: any): Promise<string> => {
+  const prompt = `Analisis level kognitif soal ini (L1, L2, atau L3). Berikan HANYA label levelnya saja.\n\n${JSON.stringify(q)}`;
   try {
     const response = await smartGeminiCall({
-      contents: prompt,
+      contents: { parts: [{ text: prompt }] },
       config: {
-        systemInstruction: "Balas hanya dengan satu kode: L1, L2, atau L3."
+        systemInstruction: "Anda adalah pakar asesmen nasional. L1: Pemahaman, L2: Aplikasi, L3: Penalaran/HOTS.",
       }
     });
-    const result = response.text?.trim().toUpperCase();
-    return ["L1", "L2", "L3"].includes(result || "") ? (result || "L1") : "L1";
-  } catch (err) {
+    const result = response.text?.trim() || "L1";
+    return ["L1", "L2", "L3"].includes(result) ? result : "L1";
+  } catch {
     return "L1";
   }
 };
 
-export const repairQuestions = async (questions: EduCBTQuestion[]): Promise<EduCBTQuestion[]> => {
-  const batchSize = 5;
-  const repairedQuestions = [...questions];
-  
-  for (let i = 0; i < questions.length; i += batchSize) {
-    const batch = questions.slice(i, i + batchSize);
-    const simplified = batch.map(q => ({
-      id: q.id,
-      type: q.type,
-      text: q.text,
-      options: q.options,
-      material: q.material,
-      level: q.level,
-      explanation: q.explanation,
-      correctAnswer: q.correctAnswer
-    }));
-
-    const prompt = `LENGKAPI & PERBAIKI DATA SOAL.
-    DATA SOAL: ${JSON.stringify(simplified)}`;
-
-    try {
-      const response = await smartGeminiCall({
-        contents: prompt,
-        config: {
-          systemInstruction: SYSTEM_INSTRUCTION,
-          responseMimeType: "application/json",
-          responseSchema: QUESTIONS_ARRAY_SCHEMA
-        }
-      });
-
-      const repairedBatch = JSON.parse(response.text || "[]");
-      
-      repairedBatch.forEach((repaired: any) => {
-        const index = repairedQuestions.findIndex(q => q.id === repaired.id || q.text === repaired.text);
-        if (index !== -1) {
-          repairedQuestions[index] = {
-            ...repairedQuestions[index],
-            material: (!repairedQuestions[index].material || repairedQuestions[index].material === "Materi Belum Terisi") ? repaired.material : repairedQuestions[index].material,
-            level: (!repairedQuestions[index].level || repairedQuestions[index].level === "L1") ? (repaired.level || "L1") : repairedQuestions[index].level,
-            explanation: !repairedQuestions[index].explanation ? cleanFormatting(repaired.explanation) : repairedQuestions[index].explanation,
-            type: repairedQuestions[index].type === "Tipe Tidak Diketahui" ? repaired.type : repairedQuestions[index].type
-          };
-        }
-      });
-
-      if (i + batchSize < questions.length) {
-        await new Promise(r => setTimeout(r, 2000));
-      }
-    } catch (err) {}
-  }
-  
-  return repairedQuestions;
-};
-
-export const regenerateSingleQuestion = async (oldQuestion: EduCBTQuestion, customInstructions?: string): Promise<EduCBTQuestion> => {
-  const prompt = `REGENERASI SOAL TIPE ${oldQuestion.type}.
-  MATERI: ${oldQuestion.material}
-  ${customInstructions ? `INSTRUKSI: ${customInstructions}` : 'Tingkatkan kualitas soal.'}
-  GUNAKAN "quizToken": "${oldQuestion.quizToken}" dalam JSON.`;
-
+/**
+ * Repairs missing fields in a list of questions using AI.
+ */
+export const repairQuestions = async (qs: EduCBTQuestion[]): Promise<EduCBTQuestion[]> => {
+  const prompt = `Lengkapi field yang kosong atau tidak valid (explanation, material, level) pada daftar soal JSON berikut. Pastikan outputnya tetap berupa JSON array yang valid:\n\n${JSON.stringify(qs)}`;
   try {
     const response = await smartGeminiCall({
-      contents: prompt,
+      contents: { parts: [{ text: prompt }] },
       config: {
         systemInstruction: SYSTEM_INSTRUCTION,
         responseMimeType: "application/json",
-        responseSchema: SINGLE_QUESTION_SCHEMA
+        responseSchema: QUESTIONS_ARRAY_SCHEMA
       }
     });
-
-    const parsed = JSON.parse(response.text || "{}");
-    const normalized = normalizeQuestion({ ...parsed, id: oldQuestion.id, order: oldQuestion.order }, {
-      subject: oldQuestion.subject,
-      phase: oldQuestion.phase,
-      material: oldQuestion.material,
-      quizToken: oldQuestion.quizToken,
-      typeCounts: {},
-      levelCounts: {}
-    });
-
-    return { ...normalized, quizToken: oldQuestion.quizToken };
-  } catch (error) {
-    throw new Error("Gagal meregenerasi soal.");
+    const parsed = JSON.parse(response.text || "[]");
+    return parsed.map((q: any, i: number) => normalizeQuestion({ ...qs[i], ...q }, { subject: qs[i].subject, phase: qs[i].phase, material: qs[i].material, quizToken: qs[i].quizToken }));
+  } catch {
+    return qs;
   }
 };
 
-export const generateImage = async (prompt: string): Promise<string> => {
+/**
+ * Regenerates a single question based on instructions.
+ * Fixed the signature to accept (target, instructions) as called in App.tsx.
+ */
+export const regenerateSingleQuestion = async (q: EduCBTQuestion, instructions?: string): Promise<EduCBTQuestion> => {
+  const prompt = `Revisi soal berikut ini:\n${JSON.stringify(q)}\n\nInstruksi Khusus: ${instructions || "Perbaiki kualitas soal namun tetap pertahankan format JSON yang sama."}`;
   try {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const response = await smartGeminiCall({
+      contents: { parts: [{ text: prompt }] },
+      config: {
+        systemInstruction: SYSTEM_INSTRUCTION,
+        responseMimeType: "application/json",
+        responseSchema: QUESTIONS_ARRAY_SCHEMA
+      }
+    });
+    const parsed = JSON.parse(response.text || "[]");
+    const newQ = Array.isArray(parsed) ? parsed[0] : parsed;
+    return normalizeQuestion(newQ, { subject: q.subject, phase: q.phase, material: q.material, quizToken: q.quizToken });
+  } catch {
+    return q;
+  }
+};
+
+/**
+ * Generates an image using Gemini's image generation model.
+ */
+export const generateImage = async (p: string): Promise<string> => {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  try {
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash-image',
-      contents: {
-        parts: [{ text: `Create a high quality, clear educational illustration for a test question: ${prompt}` }],
-      },
+      contents: { parts: [{ text: p }] },
     });
-
-    if (response.candidates && response.candidates[0].content.parts) {
-      for (const part of response.candidates[0].content.parts) {
-        if (part.inlineData) {
-          const base64EncodeString: string = part.inlineData.data;
-          return `data:image/png;base64,${base64EncodeString}`;
-        }
+    for (const part of response.candidates[0].content.parts) {
+      if (part.inlineData) {
+        return `data:image/png;base64,${part.inlineData.data}`;
       }
     }
-    return "";
-  } catch (error) { 
-    return ""; 
+  } catch (error) {
+    console.error("Image generation failed", error);
   }
+  return "";
 };

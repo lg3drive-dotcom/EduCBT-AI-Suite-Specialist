@@ -40,5 +40,9 @@ export interface GenerationConfig {
   levelCounts: Record<string, number>;
   quizToken: string;
   referenceText?: string;
+  referenceImage?: {
+    data: string; // base64 string
+    mimeType: string;
+  };
   specialInstructions?: string;
 }
