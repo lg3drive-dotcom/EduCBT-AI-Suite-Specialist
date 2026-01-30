@@ -85,16 +85,37 @@ const GenerationForm: React.FC<Props> = ({ onGenerate, onImportJson, isLoading }
   };
 
   const parseExcelQuestions = (data: any[]): EduCBTQuestion[] => {
+    // Fungsi pembantu untuk mencari nilai kolom dengan beberapa kemungkinan nama (case insensitive)
+    const getVal = (row: any, keys: string[]) => {
+      const rowKeys = Object.keys(row);
+      for (const k of keys) {
+        const foundKey = rowKeys.find(rk => rk.toLowerCase().trim() === k.toLowerCase());
+        if (foundKey !== undefined && row[foundKey] !== undefined) return row[foundKey];
+      }
+      return "";
+    };
+
     return data.map((row, i) => {
-      const tipeRaw = row["Tipe Soal"] || row["tipe"] || "";
-      const teks = (row["Teks Soal"] || row["soal"] || "").toString();
-      const options = [row["Opsi A"], row["Opsi B"], row["Opsi C"], row["Opsi D"], row["Opsi E"]].filter(o => o).map(o => o.toString());
-      let kunci = (row["Kunci Jawaban"] || "").toString();
+      const tipeRaw = getVal(row, ["Tipe Soal", "Tipe", "tipe"]);
+      const teks = getVal(row, ["Teks Soal", "Soal", "soal"]).toString();
+      
+      // Ambil opsi dari format template atau format export
+      const options = [
+        getVal(row, ["Opsi A", "A"]),
+        getVal(row, ["Opsi B", "B"]),
+        getVal(row, ["Opsi C", "C"]),
+        getVal(row, ["Opsi D", "D"]),
+        getVal(row, ["Opsi E", "E"])
+      ].filter(o => o !== null && o !== undefined && o !== "").map(o => o.toString());
+
+      let kunci = getVal(row, ["Kunci Jawaban", "Kunci", "kunci"]).toString();
       let tipe = mapExcelType(tipeRaw);
       let correctAnswer: any;
 
       if (tipe === QuestionType.PilihanGanda) {
-        correctAnswer = (kunci.toUpperCase().trim().charCodeAt(0) - 65);
+        const kStr = kunci.toUpperCase().trim();
+        correctAnswer = (kStr.charCodeAt(0) - 65);
+        if (isNaN(correctAnswer) || correctAnswer < 0) correctAnswer = 0;
       } else if (tipe === QuestionType.MCMA) {
         correctAnswer = kunci.split(/[,;|]/).map(k => k.trim().toUpperCase().charCodeAt(0) - 65).filter(n => n >= 0);
       } else if (tipe === QuestionType.BenarSalah || tipe === QuestionType.SesuaiTidakSesuai) {
@@ -103,27 +124,28 @@ const GenerationForm: React.FC<Props> = ({ onGenerate, onImportJson, isLoading }
           return (val === 'B' || val === 'TRUE' || val === 'S' || val === 'BENAR' || val === 'SESUAI');
         });
         if (correctAnswer.length < options.length) {
-          correctAnswer = [...correctAnswer, ...new Array(options.length - correctAnswer.length).fill(false)];
+          const diff = options.length - correctAnswer.length;
+          correctAnswer = [...correctAnswer, ...new Array(diff).fill(false)];
         }
       } else {
         correctAnswer = kunci;
       }
 
       return {
-        id: `xl_${Date.now()}_${i}`,
+        id: `xl_${Date.now()}_${i}_${Math.random().toString(36).substr(2, 5)}`,
         type: tipe,
-        level: (row["Level"] || "L1").toString(),
+        level: getVal(row, ["Level", "level"]) || "L1",
         subject: formData.subject,
         phase: formData.phase,
-        material: (row["Materi"] || "Materi Belum Terisi").toString(),
+        material: getVal(row, ["Materi", "materi"]) || "Materi Belum Terisi",
         text: teks,
-        explanation: (row["Pembahasan"] || "").toString(),
+        explanation: getVal(row, ["Pembahasan", "pembahasan", "Analisis Pakar"]),
         options,
         correctAnswer,
         isDeleted: false,
         createdAt: Date.now(),
-        order: parseInt(row["No"]) || (i + 1),
-        quizToken: (row["Token Paket"] || formData.quizToken).toString(),
+        order: parseInt(getVal(row, ["No", "no"])) || (i + 1),
+        quizToken: (getVal(row, ["Token Paket", "Token", "token"]) || formData.quizToken).toString().toUpperCase(),
         tfLabels: tipe === QuestionType.BenarSalah ? { true: 'Benar', false: 'Salah' } : (tipe === QuestionType.SesuaiTidakSesuai ? { true: 'Sesuai', false: 'Tidak Sesuai' } : undefined)
       };
     });
@@ -134,12 +156,26 @@ const GenerationForm: React.FC<Props> = ({ onGenerate, onImportJson, isLoading }
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (evt) => {
-      // @ts-ignore
-      const wb = window.XLSX.read(evt.target.result, { type: 'binary' });
-      // @ts-ignore
-      const data = window.XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
-      onImportJson(parseExcelQuestions(data));
-      alert("Import Excel berhasil.");
+      try {
+        // @ts-ignore
+        const dataBinary = evt.target.result;
+        // @ts-ignore
+        const wb = window.XLSX.read(dataBinary, { type: 'binary' });
+        // @ts-ignore
+        const data = window.XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+        
+        if (!data || data.length === 0) {
+          alert("File Excel kosong atau tidak terbaca.");
+          return;
+        }
+
+        const parsed = parseExcelQuestions(data);
+        onImportJson(parsed);
+        alert(`Berhasil mengimpor ${parsed.length} soal.`);
+      } catch (err) {
+        console.error(err);
+        alert("Gagal memproses file Excel. Pastikan format sesuai.");
+      }
     };
     reader.readAsBinaryString(file);
     e.target.value = '';

@@ -1,110 +1,88 @@
 
 import React, { useState } from 'react';
-import { generateImage } from '../geminiService';
 
 interface Props {
   currentImage?: string;
-  onImageChange: (base64: string | undefined) => void;
+  onImageChange: (url: string | undefined) => void;
   label: string;
 }
 
 const ImageControl: React.FC<Props> = ({ currentImage, onImageChange, label }) => {
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [showAiInput, setShowAiInput] = useState(false);
-  const [aiPrompt, setAiPrompt] = useState('');
+  const [urlInput, setUrlInput] = useState(currentImage || '');
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        onImageChange(reader.result as string);
-      };
-      reader.readAsDataURL(file);
+  const handleApplyUrl = () => {
+    if (urlInput.trim()) {
+      onImageChange(urlInput.trim());
+    } else {
+      onImageChange(undefined);
     }
   };
 
-  const handleAiGenerate = async () => {
-    if (!aiPrompt) return;
-    setIsGenerating(true);
-    try {
-      const base64 = await generateImage(aiPrompt);
-      onImageChange(base64);
-      setShowAiInput(false);
-    } catch (err) {
-      alert("Gagal men-generate gambar AI.");
-    } finally {
-      setIsGenerating(false);
-    }
+  const openExternalTool = () => {
+    window.open('https://pages.edgeone.ai/id/use-cases/image-to-url', '_blank');
   };
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">{label}</label>
+        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{label}</label>
         {currentImage && (
           <button 
-            onClick={() => onImageChange(undefined)}
-            className="text-xs text-red-500 hover:underline"
+            onClick={() => {
+              onImageChange(undefined);
+              setUrlInput('');
+            }}
+            className="text-[10px] font-bold text-rose-500 hover:underline"
           >
             Hapus Gambar
           </button>
         )}
       </div>
 
-      <div className="flex gap-2">
-        {currentImage ? (
-          <div className="relative group w-24 h-24 rounded-lg overflow-hidden border border-slate-200 bg-slate-100">
+      <div className="space-y-3">
+        {currentImage && (
+          <div className="relative group w-full h-32 rounded-xl overflow-hidden border border-slate-200 bg-slate-50 shadow-inner">
             <img src={currentImage} className="w-full h-full object-contain" alt="Preview" />
-            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-               <span className="text-[10px] text-white font-bold">Terpasang</span>
+            <div className="absolute inset-0 bg-slate-900/10 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
+               <span className="bg-white/90 px-3 py-1 rounded-full text-[10px] font-black text-slate-700 shadow-sm uppercase">Pratinjau Aktif</span>
             </div>
           </div>
-        ) : (
-          <div className="flex gap-2 w-full">
-            <label className="flex-1 flex flex-col items-center justify-center py-4 px-2 border-2 border-dashed border-slate-200 rounded-lg hover:border-indigo-400 hover:bg-indigo-50 cursor-pointer transition-all">
-              <svg className="w-5 h-5 text-slate-400 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-              </svg>
-              <span className="text-[10px] text-slate-500 font-semibold">Upload</span>
-              <input type="file" className="hidden" accept="image/*" onChange={handleFileUpload} />
-            </label>
-            
+        )}
+
+        <div className="flex flex-col gap-2">
+          <div className="flex gap-2">
+            <input 
+              type="text" 
+              placeholder="Tempelkan URL gambar di sini (http://...)" 
+              className="flex-grow px-4 py-2 text-xs font-medium rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 outline-none transition-all shadow-sm"
+              value={urlInput}
+              onChange={(e) => setUrlInput(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleApplyUrl()}
+            />
             <button 
               type="button"
-              onClick={() => setShowAiInput(!showAiInput)}
-              className="flex-1 flex flex-col items-center justify-center py-4 px-2 border-2 border-dashed border-indigo-200 bg-indigo-50/30 rounded-lg hover:border-indigo-400 hover:bg-indigo-50 cursor-pointer transition-all"
+              onClick={handleApplyUrl}
+              className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-[10px] font-black uppercase tracking-wider hover:bg-indigo-700 active:scale-95 transition-all shadow-md"
             >
-              <svg className="w-5 h-5 text-indigo-400 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
-              </svg>
-              <span className="text-[10px] text-indigo-500 font-semibold">AI Generate</span>
+              Pasang
             </button>
           </div>
-        )}
-      </div>
-
-      {showAiInput && (
-        <div className="p-3 bg-indigo-50 rounded-lg border border-indigo-100 space-y-2">
-          <input 
-            type="text" 
-            placeholder="Deskripsikan gambar..." 
-            className="w-full px-3 py-1.5 text-xs rounded border border-indigo-200 outline-none focus:ring-1 focus:ring-indigo-500"
-            value={aiPrompt}
-            onChange={(e) => setAiPrompt(e.target.value)}
-          />
-          <div className="flex justify-end gap-2">
-            <button onClick={() => setShowAiInput(false)} className="text-[10px] text-slate-500">Batal</button>
-            <button 
-              onClick={handleAiGenerate}
-              disabled={isGenerating}
-              className="px-3 py-1 bg-indigo-600 text-white rounded text-[10px] font-bold disabled:bg-slate-400"
-            >
-              {isGenerating ? 'Generating...' : 'Buat Sekarang'}
-            </button>
-          </div>
+          
+          <button 
+            type="button"
+            onClick={openExternalTool}
+            className="w-full py-2.5 px-4 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-emerald-100 transition-all group"
+          >
+            <svg className="w-4 h-4 group-hover:animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+            </svg>
+            Ubah Gambar Menjadi URL
+          </button>
+          <p className="text-[9px] text-slate-400 font-medium italic text-center">
+            * Gunakan tombol di atas jika Anda ingin mengunggah file gambar dari komputer/HP Anda.
+          </p>
         </div>
-      )}
+      </div>
     </div>
   );
 };
