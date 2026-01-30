@@ -28,8 +28,6 @@ export type EduCBTQuestion = {
   order: number;
   quizToken: string;
   image?: string; 
-  stimulusText?: string;
-  stimulusImage?: string;
   optionImages?: (string | null)[];
   isRegenerating?: boolean;
 };
