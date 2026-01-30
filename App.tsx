@@ -225,20 +225,25 @@ const App: React.FC = () => {
   const handleShuffleQuestions = () => {
     if (activeQuestions.length <= 1) return;
     if (!confirm("Acak urutan soal?")) return;
+    
+    // Gunakan activeQuestions (hasil sortir UI saat ini) sebagai basis acak
+    const shuffledActive = shuffleQuestions([...activeQuestions]);
+    
     setQuestions(prev => {
-      const active = prev.filter(q => !q.isDeleted);
       const trashed = prev.filter(q => q.isDeleted);
-      return [...shuffleQuestions(active), ...trashed];
+      return [...shuffledActive, ...trashed];
     });
   };
 
   const handleShuffleOptions = () => {
     if (activeQuestions.length === 0) return;
     if (!confirm("Acak semua pilihan jawaban (opsi)? Kunci jawaban akan otomatis disesuaikan.")) return;
+    
+    const shuffledActive = shuffleAllOptions([...activeQuestions]);
+
     setQuestions(prev => {
-      const active = prev.filter(q => !q.isDeleted);
       const trashed = prev.filter(q => q.isDeleted);
-      return [...shuffleAllOptions(active), ...trashed];
+      return [...shuffledActive, ...trashed];
     });
   };
 

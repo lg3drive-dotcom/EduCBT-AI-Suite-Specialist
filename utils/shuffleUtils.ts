@@ -3,37 +3,58 @@ import { EduCBTQuestion, QuestionType } from "../types";
 
 export const shuffleArray = <T>(array: T[]): T[] => {
   const result = [...array];
+  // Fisher-Yates Shuffle Algorithm
   for (let i = result.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [result[i], result[j]] = [result[j], result[i]];
   }
+  
+  // Jika hasil acak sama persis dengan input (mungkin terjadi pada array kecil), 
+  // coba acak sekali lagi secara sederhana jika elemen > 1
+  if (result.length > 1 && JSON.stringify(result) === JSON.stringify(array)) {
+    result.reverse();
+    const last = result.pop()!;
+    result.unshift(last);
+  }
+  
   return result;
 };
 
 export const shuffleQuestions = (questions: EduCBTQuestion[]): EduCBTQuestion[] => {
+  if (questions.length <= 1) return questions;
   const shuffled = shuffleArray(questions);
-  return shuffled.map((q, i) => ({ ...q, order: i + 1 }));
+  // Berikan nomor urut baru 1..N agar sorting 'order' di UI mengikuti hasil acak ini
+  return shuffled.map((q, i) => ({ 
+    ...q, 
+    order: i + 1 
+  }));
 };
 
 export const shuffleQuestionOptions = (q: EduCBTQuestion): EduCBTQuestion => {
   if (!q.options || q.options.length <= 1) return q;
+  // Jangan acak tipe isian atau uraian yang tidak punya opsi
   if (q.type === QuestionType.Isian || q.type === QuestionType.Uraian) return q;
 
   const n = q.options.length;
-  const indices = Array.from({ length: n }, (_, i) => i);
-  const shuffledIndices = shuffleArray(indices);
+  const originalIndices = Array.from({ length: n }, (_, i) => i);
+  const shuffledIndices = shuffleArray(originalIndices);
 
   const newOptions = shuffledIndices.map(i => q.options[i]);
   let newCorrectAnswer = q.correctAnswer;
 
   if (q.type === QuestionType.PilihanGanda) {
-    if (typeof q.correctAnswer === 'number') newCorrectAnswer = shuffledIndices.indexOf(q.correctAnswer);
+    if (typeof q.correctAnswer === 'number') {
+      newCorrectAnswer = shuffledIndices.indexOf(q.correctAnswer);
+    }
   } else if (q.type === QuestionType.MCMA) {
     if (Array.isArray(q.correctAnswer)) {
-      newCorrectAnswer = (q.correctAnswer as number[]).map(oldIdx => shuffledIndices.indexOf(oldIdx)).sort((a, b) => a - b);
+      newCorrectAnswer = (q.correctAnswer as number[])
+        .map(oldIdx => shuffledIndices.indexOf(oldIdx))
+        .sort((a, b) => a - b);
     }
   } else if (q.type === QuestionType.BenarSalah || q.type === QuestionType.SesuaiTidakSesuai) {
     if (Array.isArray(q.correctAnswer)) {
+      // Petakan kembali array boolean berdasarkan posisi opsi yang baru
       newCorrectAnswer = shuffledIndices.map(i => (q.correctAnswer as boolean[])[i]);
     }
   }
