@@ -148,6 +148,52 @@ ${config.specialInstructions ? `### INSTRUKSI KHUSUS:\n${config.specialInstructi
   }
 };
 
+/**
+ * Fungsi baru untuk memindai dokumen/gambar secara langsung tanpa batasan jumlah template.
+ */
+export const extractQuestionsFromMedia = async (config: GenerationConfig): Promise<EduCBTQuestion[]> => {
+  const prompt = `PINDAI SEMUA SOAL yang ada pada gambar/dokumen terlampir.
+  
+  Tugas Anda:
+  1. Identifikasi SETIAP soal secara utuh.
+  2. Tentukan TIPE SOAL secara otomatis sesuai isi dokumen (Pilihan Ganda, MCMA, Benar/Salah, dsb).
+  3. Tentukan LEVEL KOGNITIF (L1-L3) secara objektif berdasarkan kerumitan soal tersebut.
+  4. Ambil teks soal, opsi, dan kunci jawaban yang tertulis di dokumen tersebut. Jika tidak ada kunci, buatkan kunci yang paling akurat.
+  5. Masukkan ke materi: ${config.material || "Sesuai Dokumen"}.
+  6. Gunakan Token: ${config.quizToken || "SCAN-AUTO"}.
+  
+  Kembalikan dalam format JSON array yang valid sesuai schema.`;
+
+  const parts: any[] = [{ text: prompt }];
+  
+  config.referenceImages.forEach(img => {
+    parts.push({
+      inlineData: { data: img.data, mimeType: img.mimeType }
+    });
+  });
+  
+  config.referenceTexts.forEach(txt => {
+    parts.push({ text: `KONTEN DOKUMEN: ${txt}` });
+  });
+
+  try {
+    const response = await smartGeminiCall({
+      contents: { parts },
+      config: {
+        systemInstruction: SYSTEM_INSTRUCTION,
+        responseMimeType: "application/json",
+        responseSchema: QUESTIONS_ARRAY_SCHEMA
+      }
+    });
+
+    const parsed = JSON.parse(response.text || "[]");
+    return parsed.map((q: any) => normalizeQuestion(q, config));
+  } catch (error: any) {
+    console.error("Extraction error:", error);
+    throw new Error("Gagal mengekstrak soal dari media. Pastikan gambar cukup jelas.");
+  }
+};
+
 export const analyzeCognitiveLevel = async (q: EduCBTQuestion): Promise<string> => {
   const prompt = `Analisis tingkat kognitif soal berikut dan tentukan apakah L1, L2, atau L3.
   Kembalikan HANYA label levelnya saja (Contoh: L1).
@@ -195,6 +241,7 @@ const normalizeQuestion = (q: any, config: any): EduCBTQuestion => {
     level = "L1";
   }
 
+  // Normalisasi Tipe & Jawaban
   if (type === QuestionType.BenarSalah || type === QuestionType.SesuaiTidakSesuai) {
     q.tfLabels = type === QuestionType.BenarSalah ? { "true": "Benar", "false": "Salah" } : { "true": "Sesuai", "false": "Tidak Sesuai" };
     if (!Array.isArray(correctedAnswer)) {
@@ -219,7 +266,7 @@ const normalizeQuestion = (q: any, config: any): EduCBTQuestion => {
     correctAnswer: correctedAnswer,
     subject: config.subject,
     phase: config.phase,
-    quizToken: (q.quizToken || config.quizToken || "").toString().toUpperCase(),
+    quizToken: (q.quizToken || config.quizToken || "AUTO").toString().toUpperCase(),
     material: q.material || config.material,
     level: level,
     isDeleted: false,
