@@ -105,7 +105,7 @@ const GenerationForm: React.FC<Props> = ({ onGenerate, onImportJson, isLoading }
           let type = QuestionType.PilihanGanda;
 
           // Fuzzy Detection Tipe Soal
-          if (rawType.includes('Jamak') || rawType.includes('MCMA') || rawType.includes('Kompleks')) {
+          if (rawType.includes('Jamak') || rawType.includes('MCMA')) {
             type = QuestionType.MCMA;
           } else if (rawType.includes('Benar') || rawType.includes('B/S')) {
             type = QuestionType.BenarSalah;
@@ -115,8 +115,6 @@ const GenerationForm: React.FC<Props> = ({ onGenerate, onImportJson, isLoading }
             type = QuestionType.Isian;
           } else if (rawType.includes('URAIAN')) {
             type = QuestionType.Uraian;
-          } else {
-            type = QuestionType.PilihanGanda;
           }
 
           // Parsing Opsi A-E
@@ -124,28 +122,39 @@ const GenerationForm: React.FC<Props> = ({ onGenerate, onImportJson, isLoading }
             row['Opsi A'], row['Opsi B'], row['Opsi C'], row['Opsi D'], row['Opsi E']
           ].map(opt => String(opt || "").trim()).filter(opt => opt !== "undefined" && opt !== "");
 
-          let correctAnswer: any = row['Kunci Jawa'] || "";
+          const rawKunci = String(row['Kunci Jawa'] || "").trim();
+          let correctAnswer: any = rawKunci;
 
-          // Logic Parsing Kunci Jawaban
           if (type === QuestionType.PilihanGanda) {
-            const letter = String(correctAnswer).trim().toUpperCase();
+            const letter = rawKunci.toUpperCase();
             correctAnswer = letter.charCodeAt(0) - 65; 
             if (isNaN(correctAnswer) || correctAnswer < 0) correctAnswer = 0;
           } else if (type === QuestionType.MCMA) {
-            // Split by comma, space, or semicolon
-            correctAnswer = String(correctAnswer).split(/[,\s;]+/).map(s => {
+            // Split kunci "B, D" atau "B D"
+            correctAnswer = rawKunci.split(/[,\s;]+/).map(s => {
               const val = s.trim().toUpperCase();
-              if (!isNaN(Number(val))) return Number(val) - 1; // Jika angka
-              return val.charCodeAt(0) - 65; // Jika huruf
-            }).filter(v => !isNaN(v) && v >= 0);
-          } else if (type === QuestionType.BenarSalah || type === QuestionType.SesuaiTidakSesuai) {
-            const parts = String(correctAnswer).split(/[,\s;]+/);
+              if (!val) return null;
+              if (!isNaN(Number(val))) return Number(val) - 1;
+              return val.charCodeAt(0) - 65;
+            }).filter(v => v !== null && !isNaN(v as number) && (v as number) >= 0);
+          } else if (type === QuestionType.BenarSalah) {
+            // Label B = True, S = False
+            const parts = rawKunci.split(/[,\s;]+/);
             correctAnswer = parts.map(s => {
               const val = s.trim().toUpperCase();
-              // Cek label B (Benar), S (Sesuai), True
-              return val === 'B' || val === 'S' || val === 'TRUE' || val === 'SESUAI' || val === 'BENAR';
+              return val === 'B' || val === 'BENAR' || val === 'TRUE';
             });
-            // Sinkronkan panjang array kunci dengan jumlah opsi
+          } else if (type === QuestionType.SesuaiTidakSesuai) {
+            // Label S = True, TS = False
+            const parts = rawKunci.split(/[,\s;]+/);
+            correctAnswer = parts.map(s => {
+              const val = s.trim().toUpperCase();
+              return val === 'S' || val === 'SESUAI' || val === 'TRUE';
+            });
+          }
+
+          // Pastikan panjang array kunci sinkron dengan jumlah pernyataan (opsi)
+          if (Array.isArray(correctAnswer) && (type === QuestionType.BenarSalah || type === QuestionType.SesuaiTidakSesuai)) {
             if (correctAnswer.length < options.length) {
               const padding = new Array(options.length - correctAnswer.length).fill(false);
               correctAnswer = [...correctAnswer, ...padding];
@@ -176,7 +185,7 @@ const GenerationForm: React.FC<Props> = ({ onGenerate, onImportJson, isLoading }
         alert(`Berhasil mengimpor ${importedQuestions.length} soal.`);
       } catch (err) {
         console.error(err);
-        alert("Gagal membaca file Excel. Periksa kembali format kolom.");
+        alert("Gagal membaca file Excel.");
       }
     };
     reader.readAsBinaryString(file);
