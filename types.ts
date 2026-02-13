@@ -39,10 +39,10 @@ export interface GenerationConfig {
   typeCounts: Record<string, number>;
   levelCounts: Record<string, number>;
   quizToken: string;
-  referenceText?: string;
-  referenceImage?: {
+  referenceTexts: string[]; // Mendukung banyak teks
+  referenceImages: {
     data: string; // base64 string
     mimeType: string;
-  };
+  }[]; // Mendukung banyak gambar
   specialInstructions?: string;
 }

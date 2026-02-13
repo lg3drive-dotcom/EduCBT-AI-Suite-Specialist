@@ -1,6 +1,7 @@
 
 import React, { useState, useRef } from 'react';
 import { GenerationConfig, QuestionType, EduCBTQuestion } from '../types';
+import { downloadExcelTemplate } from '../utils/exportUtils';
 
 interface Props {
   onGenerate: (config: GenerationConfig) => void;
@@ -8,9 +9,18 @@ interface Props {
   isLoading: boolean;
 }
 
+interface FileRef {
+  id: string;
+  name: string;
+  type: string;
+  preview?: string;
+  text?: string;
+  imageData?: string;
+}
+
 const GenerationForm: React.FC<Props> = ({ onGenerate, onImportJson, isLoading }) => {
-  const [formData, setFormData] = useState<GenerationConfig>({
-    subject: 'Bahasa Indonesia',
+  const [formData, setFormData] = useState<Omit<GenerationConfig, 'referenceTexts' | 'referenceImages'>>({
+    subject: 'Matematika',
     phase: 'Fase C',
     material: '',
     typeCounts: {
@@ -23,35 +33,29 @@ const GenerationForm: React.FC<Props> = ({ onGenerate, onImportJson, isLoading }
     },
     levelCounts: { 'L1': 2, 'L2': 2, 'L3': 1 },
     quizToken: '',
-    referenceText: '',
     specialInstructions: ''
   });
 
-  const [refFileName, setRefFileName] = useState<string | null>(null);
-  const [refPreview, setRefPreview] = useState<string | null>(null);
+  const [attachedFiles, setAttachedFiles] = useState<FileRef[]>([]);
   const [isExtracting, setIsExtracting] = useState(false);
 
-  const handleFileReference = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setRefFileName(file.name);
-    setIsExtracting(true);
-    setRefPreview(null);
-
+  const processFile = async (file: File): Promise<FileRef | null> => {
     try {
       if (file.type.startsWith("image/")) {
-        const reader = new FileReader();
-        reader.onload = (evt) => {
-          const base64 = (evt.target?.result as string).split(',')[1];
-          setFormData(prev => ({ 
-            ...prev, 
-            referenceImage: { data: base64, mimeType: file.type },
-            referenceText: '' 
-          }));
-          setRefPreview(evt.target?.result as string);
-        };
-        reader.readAsDataURL(file);
+        return new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onload = (evt) => {
+            const base64 = (evt.target?.result as string).split(',')[1];
+            resolve({
+              id: Math.random().toString(36).substring(7),
+              name: file.name,
+              type: 'image',
+              preview: evt.target?.result as string,
+              imageData: base64
+            });
+          };
+          reader.readAsDataURL(file);
+        });
       } else if (file.type === "application/pdf") {
         // @ts-ignore
         const pdfJS = window.pdfjsLib;
@@ -64,22 +68,125 @@ const GenerationForm: React.FC<Props> = ({ onGenerate, onImportJson, isLoading }
           const content = await page.getTextContent();
           fullText += content.items.map((item: any) => item.str).join(" ") + "\n";
         }
-        setFormData(prev => ({ ...prev, referenceText: fullText, referenceImage: undefined }));
+        return { id: Math.random().toString(36).substring(7), name: file.name, type: 'pdf', text: fullText };
       } else if (file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
         // @ts-ignore
         const mammoth = window.mammoth;
         const arrayBuffer = await file.arrayBuffer();
         const result = await mammoth.extractRawText({ arrayBuffer });
-        setFormData(prev => ({ ...prev, referenceText: result.value, referenceImage: undefined }));
+        return { id: Math.random().toString(36).substring(7), name: file.name, type: 'docx', text: result.value };
       } else {
         const text = await file.text();
-        setFormData(prev => ({ ...prev, referenceText: text, referenceImage: undefined }));
+        return { id: Math.random().toString(36).substring(7), name: file.name, type: 'txt', text: text };
       }
     } catch (err) {
-      alert("Gagal membaca dokumen.");
-    } finally {
-      setIsExtracting(false);
+      console.error(err);
+      return null;
     }
+  };
+
+  const handleExcelImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const binaryStr = evt.target?.result;
+        // @ts-ignore
+        const XLSX = window.XLSX;
+        const workbook = XLSX.read(binaryStr, { type: 'binary' });
+        const firstSheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[firstSheetName];
+        const data = XLSX.utils.sheet_to_json(worksheet);
+
+        const importedQuestions: EduCBTQuestion[] = data.map((row: any, index: number) => {
+          // Parsing Opsi A-E
+          const options = [
+            row['Opsi A'], row['Opsi B'], row['Opsi C'], row['Opsi D'], row['Opsi E']
+          ].map(opt => String(opt || "").trim()).filter(opt => opt !== "undefined" && opt !== "");
+
+          const type = row['Tipe Soal'] || QuestionType.PilihanGanda;
+          let correctAnswer: any = row['Kunci Jawa'] || "";
+
+          // Logic Parsing Kunci Jawaban berdasarkan Tipe
+          if (type === QuestionType.PilihanGanda) {
+            const letter = String(correctAnswer).trim().toUpperCase();
+            correctAnswer = letter.charCodeAt(0) - 65; // A=0, B=1, dst
+          } else if (type === QuestionType.MCMA) {
+            correctAnswer = String(correctAnswer).split(/[,,;]/).map(s => s.trim().toUpperCase().charCodeAt(0) - 65);
+          } else if (type === QuestionType.BenarSalah || type === QuestionType.SesuaiTidakSesuai) {
+            const labels = type === QuestionType.BenarSalah ? ['B', 'S'] : ['S', 'TS'];
+            correctAnswer = String(correctAnswer).split(/[,,;]/).map(s => {
+               const val = s.trim().toUpperCase();
+               return val === labels[0] || val === 'TRUE' || val === 'B' || val === 'SESUAI';
+            });
+          }
+
+          return {
+            id: `excel_${Date.now()}_${index}`,
+            type: type,
+            level: row['Level'] || 'L1',
+            subject: row['Mata Pelaj'] || formData.subject,
+            phase: formData.phase,
+            material: row['Materi'] || formData.material,
+            text: row['Teks Soal'] || "",
+            image: row['URL Gamb'] || "",
+            explanation: row['Pembahasa'] || "",
+            options: options,
+            correctAnswer: correctAnswer,
+            order: parseInt(row['No']) || (index + 1),
+            quizToken: (row['Token'] || formData.quizToken || "IMPORT").toUpperCase(),
+            isDeleted: false,
+            createdAt: Date.now()
+          };
+        });
+
+        onImportJson(importedQuestions);
+        alert(`Berhasil mengimpor ${importedQuestions.length} soal dari Excel.`);
+      } catch (err) {
+        console.error(err);
+        alert("Gagal membaca file Excel. Pastikan format kolom sesuai template.");
+      }
+    };
+    reader.readAsBinaryString(file);
+    e.target.value = ""; // Reset input
+  };
+
+  const handleFileReference = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    
+    setIsExtracting(true);
+    const newRefs: FileRef[] = [];
+    
+    for (let i = 0; i < files.length; i++) {
+      const processed = await processFile(files[i]);
+      if (processed) newRefs.push(processed);
+    }
+    
+    setAttachedFiles(prev => [...prev, ...newRefs]);
+    setIsExtracting(false);
+    e.target.value = ""; // Reset
+  };
+
+  const removeFile = (id: string) => {
+    setAttachedFiles(prev => prev.filter(f => f.id !== id));
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const texts = attachedFiles.filter(f => f.text).map(f => f.text as string);
+    const images = attachedFiles.filter(f => f.imageData).map(f => ({
+      data: f.imageData as string,
+      mimeType: "image/png" // Default, Gemini biasanya mendeteksi otomatis
+    }));
+
+    onGenerate({
+      ...formData,
+      referenceTexts: texts,
+      referenceImages: images
+    });
   };
 
   const totalTypes = (Object.values(formData.typeCounts) as number[]).reduce((a, b) => (a || 0) + (b || 0), 0);
@@ -87,23 +194,31 @@ const GenerationForm: React.FC<Props> = ({ onGenerate, onImportJson, isLoading }
   const isMismatch = totalTypes !== totalLevels;
 
   return (
-    <form onSubmit={(e) => { e.preventDefault(); onGenerate(formData); }} className="space-y-6">
-      <div className="flex gap-2">
-        <label className="flex-1 flex items-center justify-center gap-2 py-3 px-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl cursor-pointer border border-slate-200 transition-all">
-           <span className="text-[10px] font-black uppercase tracking-widest leading-none">Buka JSON</span>
+    <form onSubmit={handleSubmit} className="space-y-6">
+      <div className="grid grid-cols-3 gap-2">
+        <label className="flex flex-col items-center justify-center gap-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl cursor-pointer border border-slate-200 transition-all text-center">
+           <span className="text-[9px] font-black uppercase tracking-tight leading-none">Buka JSON</span>
            <input type="file" className="hidden" accept=".json" multiple onChange={(e) => {
              const files = Array.from(e.target.files || []) as File[];
              files.forEach((f) => {
                const r = new FileReader();
-               r.onload = (ev) => onImportJson(JSON.parse(ev.target?.result as string));
+               r.onload = (ev) => {
+                 try {
+                   const parsed = JSON.parse(ev.target?.result as string);
+                   onImportJson(Array.isArray(parsed) ? parsed : [parsed]);
+                 } catch (e) { alert("Format JSON tidak valid."); }
+               };
                r.readAsText(f);
              });
            }} />
         </label>
-        <label className="flex-1 flex items-center justify-center gap-2 py-3 px-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl cursor-pointer border border-emerald-200 transition-all">
-           <span className="text-[10px] font-black uppercase tracking-widest leading-none">Import Excel</span>
-           <input type="file" className="hidden" accept=".xlsx, .xls" onChange={() => {}} />
+        <label className="flex flex-col items-center justify-center gap-1 py-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl cursor-pointer border border-emerald-200 transition-all text-center">
+           <span className="text-[9px] font-black uppercase tracking-tight leading-none">Import Excel</span>
+           <input type="file" className="hidden" accept=".xlsx, .xls" onChange={handleExcelImport} />
         </label>
+        <button type="button" onClick={downloadExcelTemplate} className="flex flex-col items-center justify-center gap-1 py-3 bg-amber-50 hover:bg-amber-100 text-amber-700 rounded-xl border border-amber-200 text-center">
+           <span className="text-[9px] font-black uppercase tracking-tight">Template Excel</span>
+        </button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -129,37 +244,48 @@ const GenerationForm: React.FC<Props> = ({ onGenerate, onImportJson, isLoading }
       </div>
 
       <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-        <div className="flex justify-between items-center mb-2">
-          <label className="block text-[10px] font-black text-slate-500 uppercase">Dokumen/Gambar Referensi</label>
-          {(refFileName || refPreview) && (
-            <button type="button" onClick={() => { 
-              setRefFileName(null); 
-              setRefPreview(null); 
-              setFormData(p => ({...p, referenceText: '', referenceImage: undefined})); 
-            }} className="text-[9px] font-bold text-rose-500 hover:underline">Hapus</button>
-          )}
-        </div>
-        
-        <label className={`flex flex-col items-center justify-center p-4 border-2 border-dashed rounded-xl cursor-pointer transition-all ${isExtracting ? 'bg-indigo-50 border-indigo-300' : 'bg-white border-slate-200 hover:border-indigo-400'}`}>
+        <label className="block text-[10px] font-black text-slate-500 uppercase mb-2">Dokumen/Gambar Referensi (Multi-File)</label>
+        <label className={`flex flex-col items-center justify-center p-6 border-2 border-dashed rounded-xl cursor-pointer transition-all ${isExtracting ? 'bg-indigo-50 border-indigo-300' : 'bg-white border-slate-200 hover:border-indigo-400'}`}>
            {isExtracting ? (
              <div className="flex items-center gap-2">
                <div className="w-4 h-4 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
-               <span className="text-xs font-bold text-indigo-600 uppercase">Menganalisis...</span>
-             </div>
-           ) : refPreview ? (
-             <div className="flex flex-col items-center gap-2">
-               <img src={refPreview} className="h-20 w-auto rounded border shadow-sm" alt="Preview" />
-               <span className="text-[10px] font-black text-indigo-600 uppercase tracking-tight">Terlampir: {refFileName}</span>
+               <span className="text-xs font-bold text-indigo-600 uppercase">Mengekstrak...</span>
              </div>
            ) : (
              <>
-               <svg className="w-6 h-6 text-slate-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-               <span className="text-xs font-bold text-slate-600">{refFileName || "Klik untuk Upload Referensi"}</span>
-               <span className="text-[9px] text-slate-400 mt-1 uppercase text-center">PDF, DOCX, atau Gambar</span>
+               <svg className="w-8 h-8 text-slate-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
+               <span className="text-xs font-bold text-slate-600 text-center uppercase tracking-wide">Klik/Tarik file ke sini</span>
+               <span className="text-[9px] text-slate-400 mt-1 uppercase text-center">Bisa pilih banyak PDF, DOCX, JPG, PNG</span>
              </>
            )}
-           <input type="file" className="hidden" accept=".pdf, .docx, .txt, .jpg, .jpeg, .png, .webp" onChange={handleFileReference} />
+           <input type="file" className="hidden" accept=".pdf, .docx, .txt, .jpg, .jpeg, .png, .webp" multiple onChange={handleFileReference} />
         </label>
+
+        {attachedFiles.length > 0 && (
+          <div className="mt-4 space-y-2">
+            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Terlampir ({attachedFiles.length}):</p>
+            <div className="grid grid-cols-1 gap-2">
+              {attachedFiles.map(file => (
+                <div key={file.id} className="flex items-center gap-3 p-2 bg-white border border-slate-200 rounded-lg shadow-sm">
+                  {file.preview ? (
+                    <img src={file.preview} className="w-10 h-10 rounded object-cover border" />
+                  ) : (
+                    <div className="w-10 h-10 rounded bg-indigo-50 flex items-center justify-center text-indigo-500">
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                    </div>
+                  )}
+                  <div className="flex-grow min-w-0">
+                    <p className="text-[11px] font-bold text-slate-700 truncate">{file.name}</p>
+                    <p className="text-[9px] text-slate-400 uppercase font-black">{file.type}</p>
+                  </div>
+                  <button type="button" onClick={() => removeFile(file.id)} className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="bg-emerald-50/50 p-4 rounded-xl border border-emerald-100">
@@ -168,7 +294,6 @@ const GenerationForm: React.FC<Props> = ({ onGenerate, onImportJson, isLoading }
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* LEVEL KOGNITIF */}
         <div className="bg-amber-50/50 p-4 rounded-xl border border-amber-100">
           <label className="block text-[10px] font-black text-amber-800 uppercase mb-3 tracking-widest">Level Kognitif</label>
           <div className="flex gap-2">
@@ -181,23 +306,16 @@ const GenerationForm: React.FC<Props> = ({ onGenerate, onImportJson, isLoading }
           </div>
         </div>
 
-        {/* TIPE SOAL - DIPERBAIKI AGAR TIDAK TERPOTONG */}
         <div className="bg-yellow-50/50 p-4 rounded-xl border border-yellow-100">
           <div className="flex justify-between items-center mb-3">
             <label className="block text-[10px] font-black text-yellow-800 uppercase tracking-widest">Tipe Soal</label>
             <span className="text-[10px] font-black bg-yellow-200 text-yellow-900 px-2 py-0.5 rounded-full">Total: {totalTypes}</span>
           </div>
-          <div className="space-y-2 max-h-[140px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-yellow-200 scrollbar-track-transparent">
+          <div className="space-y-2 max-h-[140px] overflow-y-auto pr-2">
             {Object.values(QuestionType).map(type => (
-              <div key={type} className="flex items-center justify-between gap-3 bg-white px-3 py-2 rounded-xl border border-yellow-200 shadow-sm hover:border-yellow-400 transition-colors">
+              <div key={type} className="flex items-center justify-between gap-3 bg-white px-3 py-2 rounded-xl border border-yellow-200 shadow-sm">
                 <span className="text-[10px] font-bold text-slate-600 uppercase leading-tight flex-grow">{type}</span>
-                <input 
-                  type="number" 
-                  min={0} 
-                  className="w-12 bg-yellow-50 text-center font-black text-sm outline-none rounded-lg py-0.5 border border-yellow-100 text-yellow-800 focus:ring-1 focus:ring-yellow-400" 
-                  value={formData.typeCounts[type]} 
-                  onChange={(e) => setFormData({...formData, typeCounts: {...formData.typeCounts, [type]: parseInt(e.target.value) || 0}})} 
-                />
+                <input type="number" min={0} className="w-12 bg-yellow-50 text-center font-black text-sm outline-none rounded-lg py-0.5 text-yellow-800" value={formData.typeCounts[type]} onChange={(e) => setFormData({...formData, typeCounts: {...formData.typeCounts, [type]: parseInt(e.target.value) || 0}})} />
               </div>
             ))}
           </div>
@@ -205,23 +323,13 @@ const GenerationForm: React.FC<Props> = ({ onGenerate, onImportJson, isLoading }
       </div>
 
       {isMismatch && (
-        <div className="p-3 bg-rose-50 border border-rose-100 rounded-xl">
-           <p className="text-[10px] font-bold text-rose-500 text-center flex items-center justify-center gap-2">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-            Selisih: {Math.abs(totalTypes - totalLevels)} item (Total Tipe & Level harus sama)
-          </p>
+        <div className="p-3 bg-rose-50 border border-rose-100 rounded-xl text-center">
+           <p className="text-[10px] font-bold text-rose-500">Selisih: {Math.abs(totalTypes - totalLevels)} item (Tipe & Level harus sama)</p>
         </div>
       )}
 
-      <button 
-        disabled={isLoading || totalTypes === 0 || isMismatch} 
-        type="submit" 
-        className="group relative w-full py-4 px-6 rounded-2xl font-black text-base uppercase tracking-widest text-white shadow-xl bg-indigo-600 hover:bg-indigo-700 transition-all active:scale-[0.98] disabled:bg-slate-300 disabled:shadow-none overflow-hidden"
-      >
-        <span className="relative z-10">{isLoading ? 'MENYUSUN STRATEGI...' : '✨ GENERATE SOAL (VISUAL AI)'}</span>
-        {!isLoading && !isMismatch && totalTypes > 0 && (
-          <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
-        )}
+      <button disabled={isLoading || totalTypes === 0 || isMismatch} type="submit" className="w-full py-4 px-6 rounded-2xl font-black text-base uppercase tracking-widest text-white shadow-xl bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 transition-all">
+        {isLoading ? 'MENYUSUN...' : '✨ GENERATE DARI REFERENSI'}
       </button>
     </form>
   );

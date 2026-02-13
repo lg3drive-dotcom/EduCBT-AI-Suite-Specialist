@@ -6,6 +6,13 @@ const SYSTEM_INSTRUCTION = `
 Persona: Pakar Kurikulum Nasional (AKM/HOTS) & Pengembang Sistem EduCBT Pro.
 Tugas: Membuat soal evaluasi berkualitas tinggi dalam format JSON array yang VALID dan VARIATIF.
 
+### ATURAN LEVEL KOGNITIF (STRICT) ###
+- Field 'level' WAJIB diisi dengan label "L1", "L2", atau "L3".
+- L1 (LOTS): Mengingat, Memahami. Teks literal, identifikasi sederhana.
+- L2 (MOTS): Mengaplikasikan. Prosedural, perhitungan standar, implementasi rumus.
+- L3 (HOTS): Menganalisis, Mengevaluasi, Mencipta. Membutuhkan penalaran, perbandingan, sintesis informasi dari stimulus.
+- JANGAN mengisi 'level' dengan jenjang sekolah (SD/MI/SMP/SMA).
+
 ### DAFTAR TIPE SOAL (STRICT) ###
 1. Pilihan Ganda: 
    - 'type': "Pilihan Ganda"
@@ -30,9 +37,7 @@ Tugas: Membuat soal evaluasi berkualitas tinggi dalam format JSON array yang VAL
 
 ### ATURAN TEKNIS KRUSIAL ###
 - UNTUK TIPE TABEL (Benar/Salah & Sesuai/Tidak Sesuai): 'options' berisi daftar pernyataan (minimal 3), dan 'correctAnswer' HARUS array boolean dengan panjang yang sama.
-- DILARANG memasukkan teks instruksi atau penjelasan format ke dalam nilai field JSON manapun.
-- 'tfLabels' HARUS HANYA berisi kata "Benar" & "Salah" atau "Sesuai" & "Tidak Sesuai".
-- Gunakan teks polos (Plain Text), hindari Markdown.
+- JIKA ada ekspresi matematika, gunakan format LaTeX dengan pembungkus single dollar sign ($...$).
 `;
 
 const QUESTIONS_ARRAY_SCHEMA = {
@@ -41,14 +46,16 @@ const QUESTIONS_ARRAY_SCHEMA = {
     type: Type.OBJECT,
     properties: {
       type: { type: Type.STRING },
-      level: { type: Type.STRING },
+      level: { 
+        type: Type.STRING,
+        description: "Level kognitif soal: L1, L2, atau L3." 
+      },
       text: { type: Type.STRING },
       explanation: { type: Type.STRING },
       material: { type: Type.STRING },
       quizToken: { type: Type.STRING },
       order: { type: Type.INTEGER },
       options: { type: Type.ARRAY, items: { type: Type.STRING } },
-      // correctAnswer is kept as STRING in schema for flexibility, normalizeQuestion handles type conversion.
       correctAnswer: { type: Type.STRING },
       tfLabels: {
         type: Type.OBJECT,
@@ -62,23 +69,9 @@ const QUESTIONS_ARRAY_SCHEMA = {
   }
 };
 
-const cleanFormatting = (str: string) => {
-  if (!str) return "";
-  return str
-    .replace(/<[^>]*>?/gm, '')
-    .replace(/\*\*/g, '')
-    .replace(/\*/g, '')
-    .replace(/__/g, '')
-    .replace(/#{1,6}\s?/g, '')
-    .replace(/`{1,3}/g, '')
-    .trim();
-};
-
-// Internal helper for making Gemini API calls with retries and model rotation.
 async function smartGeminiCall(payload: any, maxRetries = 4) {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   let lastError: any;
-  // Complex reasoning tasks use 'gemini-3-pro-preview'.
   const models = ['gemini-3-pro-preview', 'gemini-3-flash-preview'];
 
   for (const modelName of models) {
@@ -91,13 +84,7 @@ async function smartGeminiCall(payload: any, maxRetries = 4) {
         return response;
       } catch (error: any) {
         lastError = error;
-        const msg = (error?.message || "").toLowerCase();
-        if (msg.includes("quota") || msg.includes("429") || msg.includes("overloaded")) {
-          if (i === maxRetries - 1) continue;
-          await new Promise(r => setTimeout(r, (i + 1) * 3000));
-          continue;
-        }
-        throw error;
+        await new Promise(r => setTimeout(r, (i + 1) * 2000));
       }
     }
   }
@@ -110,30 +97,39 @@ export const generateEduCBTQuestions = async (config: GenerationConfig): Promise
     .map(([type, count]) => `- ${type}: ${count} SOAL`)
     .join('\n');
 
+  const requestedLevels = Object.entries(config.levelCounts)
+    .filter(([_, count]) => count > 0)
+    .map(([level, count]) => `- ${level}: ${count} SOAL`)
+    .join('\n');
+
   const total = (Object.values(config.typeCounts) as number[]).reduce((a, b) => a + b, 0);
 
   const textPrompt = `BUAT TOTAL ${total} SOAL untuk ${config.subject}.
   Materi: ${config.material}
+  Fase: ${config.phase}
   Token: ${config.quizToken}
   
-### PEMBAGIAN TIPE:
+### PEMBAGIAN TIPE SOAL:
 ${requestedTypes}
 
-### KONTEKS REFERENSI:
-${config.referenceText ? `Gunakan teks ini sebagai dasar: ${config.referenceText.substring(0, 5000)}` : ''}
-${config.referenceImage ? `Lihat gambar yang saya lampirkan untuk membuat soal berdasarkan stimulus visual (grafik/tabel/infografis/buku paket) tersebut.` : ''}
-${config.specialInstructions ? `Instruksi Khusus: ${config.specialInstructions}` : ''}`;
+### PEMBAGIAN LEVEL KOGNITIF (WAJIB SESUAI):
+${requestedLevels}
+
+### KONTEKS REFERENSI TEKS:
+${config.referenceTexts.join("\n\n--- DOKUMEN LAIN ---\n\n")}
+
+${config.specialInstructions ? `### INSTRUKSI KHUSUS:\n${config.specialInstructions}` : ''}`;
 
   const parts: any[] = [{ text: textPrompt }];
   
-  if (config.referenceImage) {
+  config.referenceImages.forEach(img => {
     parts.push({
       inlineData: {
-        data: config.referenceImage.data,
-        mimeType: config.referenceImage.mimeType
+        data: img.data,
+        mimeType: img.mimeType
       }
     });
-  }
+  });
 
   try {
     const response = await smartGeminiCall({
@@ -148,7 +144,44 @@ ${config.specialInstructions ? `Instruksi Khusus: ${config.specialInstructions}`
     const parsed = JSON.parse(response.text || "[]");
     return parsed.map((q: any) => normalizeQuestion(q, config));
   } catch (error: any) {
-    throw new Error("Gagal generate soal. Pastikan koneksi stabil.");
+    throw new Error("Gagal generate soal. Pastikan referensi tidak terlalu besar.");
+  }
+};
+
+export const analyzeCognitiveLevel = async (q: EduCBTQuestion): Promise<string> => {
+  const prompt = `Analisis tingkat kognitif soal berikut dan tentukan apakah L1, L2, atau L3.
+  Kembalikan HANYA label levelnya saja (Contoh: L1).
+  Soal: ${q.text}
+  Opsi: ${q.options?.join(", ")}
+  Pembahasan: ${q.explanation}`;
+  
+  try {
+    const response = await smartGeminiCall({
+      contents: { parts: [{ text: prompt }] },
+      config: {
+        systemInstruction: "Anda adalah pakar penentu Level Kognitif kurikulum Indonesia. Gunakan standar L1 (LOTS), L2 (MOTS), L3 (HOTS). Balas HANYA label: L1 atau L2 atau L3.",
+      }
+    });
+    const result = response.text?.trim() || "L1";
+    return ["L1", "L2", "L3"].includes(result) ? result : "L1";
+  } catch {
+    return q.level;
+  }
+};
+
+export const convertTextToLatex = async (text: string): Promise<string> => {
+  if (!text.trim()) return "";
+  const prompt = `Ubah semua ekspresi matematika dalam teks berikut menjadi format LaTeX ($...$).\nTeks: ${text}`;
+  try {
+    const response = await smartGeminiCall({
+      contents: { parts: [{ text: prompt }] },
+      config: {
+        systemInstruction: "Anda adalah pakar penulisan rumus matematika LaTeX.",
+      }
+    });
+    return response.text?.trim() || text;
+  } catch {
+    return text;
   }
 };
 
@@ -157,33 +190,19 @@ const normalizeQuestion = (q: any, config: any): EduCBTQuestion => {
   let correctedAnswer = q.correctAnswer;
   const optionsCount = q.options?.length || 4;
 
-  // Handle various response types for correctAnswer from Gemini.
+  let level = q.level || "L1";
+  if (!["L1", "L2", "L3"].includes(level)) {
+    level = "L1";
+  }
+
   if (type === QuestionType.BenarSalah || type === QuestionType.SesuaiTidakSesuai) {
     q.tfLabels = type === QuestionType.BenarSalah ? { "true": "Benar", "false": "Salah" } : { "true": "Sesuai", "false": "Tidak Sesuai" };
     if (!Array.isArray(correctedAnswer)) {
-      if (typeof correctedAnswer === 'string' && (correctedAnswer.includes('[') || correctedAnswer.includes(','))) {
-        try {
-          correctedAnswer = JSON.parse(correctedAnswer.includes('[') ? correctedAnswer : `[${correctedAnswer}]`);
-        } catch {
-          correctedAnswer = new Array(optionsCount).fill(false);
-        }
-      } else {
         correctedAnswer = new Array(optionsCount).fill(false);
-      }
     }
   } else if (type === QuestionType.MCMA) {
     if (!Array.isArray(correctedAnswer)) {
-      if (typeof correctedAnswer === 'string' && (correctedAnswer.includes('[') || correctedAnswer.includes(','))) {
-        try {
-          correctedAnswer = JSON.parse(correctedAnswer.includes('[') ? correctedAnswer : `[${correctedAnswer}]`);
-        } catch {
-          correctedAnswer = [0];
-        }
-      } else if (typeof correctedAnswer === 'number') {
-        correctedAnswer = [correctedAnswer];
-      } else {
         correctedAnswer = [0];
-      }
     }
   } else if (type === QuestionType.PilihanGanda) {
     if (typeof correctedAnswer !== 'number') {
@@ -195,13 +214,14 @@ const normalizeQuestion = (q: any, config: any): EduCBTQuestion => {
   return {
     ...q,
     id: q.id || `q_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-    text: cleanFormatting(q.text || ""),
-    explanation: cleanFormatting(q.explanation),
+    text: q.text || "",
+    explanation: q.explanation || "",
     correctAnswer: correctedAnswer,
     subject: config.subject,
     phase: config.phase,
     quizToken: (q.quizToken || config.quizToken || "").toString().toUpperCase(),
     material: q.material || config.material,
+    level: level,
     isDeleted: false,
     createdAt: Date.now(),
     order: q.order || 1,
@@ -209,16 +229,13 @@ const normalizeQuestion = (q: any, config: any): EduCBTQuestion => {
   };
 };
 
-/**
- * Generates an explanation for a given question using AI.
- */
 export const generateExplanationForQuestion = async (q: any): Promise<string> => {
-  const prompt = `Berikan penjelasan ringkas dan logis untuk kunci jawaban soal berikut ini:\n\n${JSON.stringify(q)}`;
+  const prompt = `Berikan penjelasan logis untuk kunci jawaban soal berikut:\n${JSON.stringify(q)}`;
   try {
     const response = await smartGeminiCall({
       contents: { parts: [{ text: prompt }] },
       config: {
-        systemInstruction: "Anda adalah pakar pedagogi yang memberikan penjelasan kunci jawaban yang mendalam namun mudah dipahami.",
+        systemInstruction: "Pakar pedagogi.",
       }
     });
     return response.text?.trim() || "Penjelasan tidak tersedia.";
@@ -227,52 +244,8 @@ export const generateExplanationForQuestion = async (q: any): Promise<string> =>
   }
 };
 
-/**
- * Analyzes the cognitive level (L1, L2, L3) of a question using AI.
- */
-export const analyzeLevelForQuestion = async (q: any): Promise<string> => {
-  const prompt = `Analisis level kognitif soal ini (L1, L2, atau L3). Berikan HANYA label levelnya saja.\n\n${JSON.stringify(q)}`;
-  try {
-    const response = await smartGeminiCall({
-      contents: { parts: [{ text: prompt }] },
-      config: {
-        systemInstruction: "Anda adalah pakar asesmen nasional. L1: Pemahaman, L2: Aplikasi, L3: Penalaran/HOTS.",
-      }
-    });
-    const result = response.text?.trim() || "L1";
-    return ["L1", "L2", "L3"].includes(result) ? result : "L1";
-  } catch {
-    return "L1";
-  }
-};
-
-/**
- * Repairs missing fields in a list of questions using AI.
- */
-export const repairQuestions = async (qs: EduCBTQuestion[]): Promise<EduCBTQuestion[]> => {
-  const prompt = `Lengkapi field yang kosong atau tidak valid (explanation, material, level) pada daftar soal JSON berikut. Pastikan outputnya tetap berupa JSON array yang valid:\n\n${JSON.stringify(qs)}`;
-  try {
-    const response = await smartGeminiCall({
-      contents: { parts: [{ text: prompt }] },
-      config: {
-        systemInstruction: SYSTEM_INSTRUCTION,
-        responseMimeType: "application/json",
-        responseSchema: QUESTIONS_ARRAY_SCHEMA
-      }
-    });
-    const parsed = JSON.parse(response.text || "[]");
-    return parsed.map((q: any, i: number) => normalizeQuestion({ ...qs[i], ...q }, { subject: qs[i].subject, phase: qs[i].phase, material: qs[i].material, quizToken: qs[i].quizToken }));
-  } catch {
-    return qs;
-  }
-};
-
-/**
- * Regenerates a single question based on instructions.
- * Fixed the signature to accept (target, instructions) as called in App.tsx.
- */
 export const regenerateSingleQuestion = async (q: EduCBTQuestion, instructions?: string): Promise<EduCBTQuestion> => {
-  const prompt = `Revisi soal berikut ini:\n${JSON.stringify(q)}\n\nInstruksi Khusus: ${instructions || "Perbaiki kualitas soal namun tetap pertahankan format JSON yang sama."}`;
+  const prompt = `Revisi soal ini: ${JSON.stringify(q)}\nInstruksi: ${instructions || "Perbaiki kualitas."}`;
   try {
     const response = await smartGeminiCall({
       contents: { parts: [{ text: prompt }] },
@@ -288,25 +261,4 @@ export const regenerateSingleQuestion = async (q: EduCBTQuestion, instructions?:
   } catch {
     return q;
   }
-};
-
-/**
- * Generates an image using Gemini's image generation model.
- */
-export const generateImage = async (p: string): Promise<string> => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-  try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-image',
-      contents: { parts: [{ text: p }] },
-    });
-    for (const part of response.candidates[0].content.parts) {
-      if (part.inlineData) {
-        return `data:image/png;base64,${part.inlineData.data}`;
-      }
-    }
-  } catch (error) {
-    console.error("Image generation failed", error);
-  }
-  return "";
 };
