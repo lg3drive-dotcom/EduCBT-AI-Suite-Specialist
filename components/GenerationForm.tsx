@@ -85,113 +85,6 @@ const GenerationForm: React.FC<Props> = ({ onGenerate, onImportJson, isLoading }
     }
   };
 
-  const handleExcelImport = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      try {
-        const binaryStr = evt.target?.result;
-        // @ts-ignore
-        const XLSX = window.XLSX;
-        const workbook = XLSX.read(binaryStr, { type: 'binary' });
-        const firstSheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[firstSheetName];
-        const data = XLSX.utils.sheet_to_json(worksheet);
-
-        const importedQuestions: EduCBTQuestion[] = data.map((row: any, index: number) => {
-          const rawType = String(row['Tipe Soal'] || "").trim();
-          let type = QuestionType.PilihanGanda;
-
-          // Fuzzy Detection Tipe Soal
-          if (rawType.includes('Jamak') || rawType.includes('MCMA')) {
-            type = QuestionType.MCMA;
-          } else if (rawType.includes('Benar') || rawType.includes('B/S')) {
-            type = QuestionType.BenarSalah;
-          } else if (rawType.includes('Sesuai') || rawType.includes('S/TS')) {
-            type = QuestionType.SesuaiTidakSesuai;
-          } else if (rawType.includes('ISIAN')) {
-            type = QuestionType.Isian;
-          } else if (rawType.includes('URAIAN')) {
-            type = QuestionType.Uraian;
-          }
-
-          // Parsing Opsi A-E
-          const options = [
-            row['Opsi A'], row['Opsi B'], row['Opsi C'], row['Opsi D'], row['Opsi E']
-          ].map(opt => String(opt || "").trim()).filter(opt => opt !== "undefined" && opt !== "");
-
-          const rawKunci = String(row['Kunci Jawa'] || "").trim();
-          let correctAnswer: any = rawKunci;
-
-          if (type === QuestionType.PilihanGanda) {
-            const letter = rawKunci.toUpperCase();
-            correctAnswer = letter.charCodeAt(0) - 65; 
-            if (isNaN(correctAnswer) || correctAnswer < 0) correctAnswer = 0;
-          } else if (type === QuestionType.MCMA) {
-            // Split kunci "B, D" atau "B D"
-            correctAnswer = rawKunci.split(/[,\s;]+/).map(s => {
-              const val = s.trim().toUpperCase();
-              if (!val) return null;
-              if (!isNaN(Number(val))) return Number(val) - 1;
-              return val.charCodeAt(0) - 65;
-            }).filter(v => v !== null && !isNaN(v as number) && (v as number) >= 0);
-          } else if (type === QuestionType.BenarSalah) {
-            // Label B = True, S = False
-            const parts = rawKunci.split(/[,\s;]+/);
-            correctAnswer = parts.map(s => {
-              const val = s.trim().toUpperCase();
-              return val === 'B' || val === 'BENAR' || val === 'TRUE';
-            });
-          } else if (type === QuestionType.SesuaiTidakSesuai) {
-            // Label S = True, TS = False
-            const parts = rawKunci.split(/[,\s;]+/);
-            correctAnswer = parts.map(s => {
-              const val = s.trim().toUpperCase();
-              return val === 'S' || val === 'SESUAI' || val === 'TRUE';
-            });
-          }
-
-          // Pastikan panjang array kunci sinkron dengan jumlah pernyataan (opsi)
-          if (Array.isArray(correctAnswer) && (type === QuestionType.BenarSalah || type === QuestionType.SesuaiTidakSesuai)) {
-            if (correctAnswer.length < options.length) {
-              const padding = new Array(options.length - correctAnswer.length).fill(false);
-              correctAnswer = [...correctAnswer, ...padding];
-            }
-          }
-
-          return {
-            id: `excel_${Date.now()}_${index}`,
-            type: type,
-            level: row['Level'] || 'L1',
-            subject: row['Mata Pelaj'] || formData.subject,
-            phase: formData.phase,
-            material: row['Materi'] || formData.material,
-            text: row['Teks Soal'] || "",
-            image: row['URL Gamb'] || "",
-            explanation: row['Pembahasa'] || "",
-            options: options,
-            correctAnswer: correctAnswer,
-            order: parseInt(row['No']) || (index + 1),
-            quizToken: (row['Token'] || formData.quizToken || "IMPORT").toUpperCase(),
-            isDeleted: false,
-            createdAt: Date.now(),
-            tfLabels: type === QuestionType.BenarSalah ? { true: 'Benar', false: 'Salah' } : (type === QuestionType.SesuaiTidakSesuai ? { true: 'Sesuai', false: 'Tidak Sesuai' } : undefined)
-          };
-        });
-
-        onImportJson(importedQuestions);
-        alert(`Berhasil mengimpor ${importedQuestions.length} soal.`);
-      } catch (err) {
-        console.error(err);
-        alert("Gagal membaca file Excel.");
-      }
-    };
-    reader.readAsBinaryString(file);
-    e.target.value = ""; 
-  };
-
   const handleFileReference = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
@@ -206,7 +99,7 @@ const GenerationForm: React.FC<Props> = ({ onGenerate, onImportJson, isLoading }
     
     setAttachedFiles(prev => [...prev, ...newRefs]);
     setIsExtracting(false);
-    e.target.value = ""; 
+    e.target.value = ""; // Reset
   };
 
   const removeFile = (id: string) => {
@@ -218,7 +111,7 @@ const GenerationForm: React.FC<Props> = ({ onGenerate, onImportJson, isLoading }
     const texts = attachedFiles.filter(f => f.text).map(f => f.text as string);
     const images = attachedFiles.filter(f => f.imageData).map(f => ({
       data: f.imageData as string,
-      mimeType: "image/png"
+      mimeType: "image/png" // Default, Gemini usually detects it
     }));
 
     onGenerate({
@@ -253,7 +146,7 @@ const GenerationForm: React.FC<Props> = ({ onGenerate, onImportJson, isLoading }
         </label>
         <label className="flex flex-col items-center justify-center gap-1 py-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl cursor-pointer border border-emerald-200 transition-all text-center">
            <span className="text-[9px] font-black uppercase tracking-tight leading-none">Import Excel</span>
-           <input type="file" className="hidden" accept=".xlsx, .xls" onChange={handleExcelImport} />
+           <input type="file" className="hidden" accept=".xlsx, .xls" />
         </label>
         <button type="button" onClick={downloadExcelTemplate} className="flex flex-col items-center justify-center gap-1 py-3 bg-amber-50 hover:bg-amber-100 text-amber-700 rounded-xl border border-amber-200 text-center">
            <span className="text-[9px] font-black uppercase tracking-tight">Template Excel</span>
