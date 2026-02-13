@@ -101,26 +101,55 @@ const GenerationForm: React.FC<Props> = ({ onGenerate, onImportJson, isLoading }
         const data = XLSX.utils.sheet_to_json(worksheet);
 
         const importedQuestions: EduCBTQuestion[] = data.map((row: any, index: number) => {
+          const rawType = String(row['Tipe Soal'] || "").trim();
+          let type = QuestionType.PilihanGanda;
+
+          // Fuzzy Detection Tipe Soal
+          if (rawType.includes('Jamak') || rawType.includes('MCMA') || rawType.includes('Kompleks')) {
+            type = QuestionType.MCMA;
+          } else if (rawType.includes('Benar') || rawType.includes('B/S')) {
+            type = QuestionType.BenarSalah;
+          } else if (rawType.includes('Sesuai') || rawType.includes('S/TS')) {
+            type = QuestionType.SesuaiTidakSesuai;
+          } else if (rawType.includes('ISIAN')) {
+            type = QuestionType.Isian;
+          } else if (rawType.includes('URAIAN')) {
+            type = QuestionType.Uraian;
+          } else {
+            type = QuestionType.PilihanGanda;
+          }
+
           // Parsing Opsi A-E
           const options = [
             row['Opsi A'], row['Opsi B'], row['Opsi C'], row['Opsi D'], row['Opsi E']
           ].map(opt => String(opt || "").trim()).filter(opt => opt !== "undefined" && opt !== "");
 
-          const type = row['Tipe Soal'] || QuestionType.PilihanGanda;
           let correctAnswer: any = row['Kunci Jawa'] || "";
 
-          // Logic Parsing Kunci Jawaban berdasarkan Tipe
+          // Logic Parsing Kunci Jawaban
           if (type === QuestionType.PilihanGanda) {
             const letter = String(correctAnswer).trim().toUpperCase();
-            correctAnswer = letter.charCodeAt(0) - 65; // A=0, B=1, dst
+            correctAnswer = letter.charCodeAt(0) - 65; 
+            if (isNaN(correctAnswer) || correctAnswer < 0) correctAnswer = 0;
           } else if (type === QuestionType.MCMA) {
-            correctAnswer = String(correctAnswer).split(/[,,;]/).map(s => s.trim().toUpperCase().charCodeAt(0) - 65);
+            // Split by comma, space, or semicolon
+            correctAnswer = String(correctAnswer).split(/[,\s;]+/).map(s => {
+              const val = s.trim().toUpperCase();
+              if (!isNaN(Number(val))) return Number(val) - 1; // Jika angka
+              return val.charCodeAt(0) - 65; // Jika huruf
+            }).filter(v => !isNaN(v) && v >= 0);
           } else if (type === QuestionType.BenarSalah || type === QuestionType.SesuaiTidakSesuai) {
-            const labels = type === QuestionType.BenarSalah ? ['B', 'S'] : ['S', 'TS'];
-            correctAnswer = String(correctAnswer).split(/[,,;]/).map(s => {
-               const val = s.trim().toUpperCase();
-               return val === labels[0] || val === 'TRUE' || val === 'B' || val === 'SESUAI';
+            const parts = String(correctAnswer).split(/[,\s;]+/);
+            correctAnswer = parts.map(s => {
+              const val = s.trim().toUpperCase();
+              // Cek label B (Benar), S (Sesuai), True
+              return val === 'B' || val === 'S' || val === 'TRUE' || val === 'SESUAI' || val === 'BENAR';
             });
+            // Sinkronkan panjang array kunci dengan jumlah opsi
+            if (correctAnswer.length < options.length) {
+              const padding = new Array(options.length - correctAnswer.length).fill(false);
+              correctAnswer = [...correctAnswer, ...padding];
+            }
           }
 
           return {
@@ -138,19 +167,20 @@ const GenerationForm: React.FC<Props> = ({ onGenerate, onImportJson, isLoading }
             order: parseInt(row['No']) || (index + 1),
             quizToken: (row['Token'] || formData.quizToken || "IMPORT").toUpperCase(),
             isDeleted: false,
-            createdAt: Date.now()
+            createdAt: Date.now(),
+            tfLabels: type === QuestionType.BenarSalah ? { true: 'Benar', false: 'Salah' } : (type === QuestionType.SesuaiTidakSesuai ? { true: 'Sesuai', false: 'Tidak Sesuai' } : undefined)
           };
         });
 
         onImportJson(importedQuestions);
-        alert(`Berhasil mengimpor ${importedQuestions.length} soal dari Excel.`);
+        alert(`Berhasil mengimpor ${importedQuestions.length} soal.`);
       } catch (err) {
         console.error(err);
-        alert("Gagal membaca file Excel. Pastikan format kolom sesuai template.");
+        alert("Gagal membaca file Excel. Periksa kembali format kolom.");
       }
     };
     reader.readAsBinaryString(file);
-    e.target.value = ""; // Reset input
+    e.target.value = ""; 
   };
 
   const handleFileReference = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -167,7 +197,7 @@ const GenerationForm: React.FC<Props> = ({ onGenerate, onImportJson, isLoading }
     
     setAttachedFiles(prev => [...prev, ...newRefs]);
     setIsExtracting(false);
-    e.target.value = ""; // Reset
+    e.target.value = ""; 
   };
 
   const removeFile = (id: string) => {
@@ -179,7 +209,7 @@ const GenerationForm: React.FC<Props> = ({ onGenerate, onImportJson, isLoading }
     const texts = attachedFiles.filter(f => f.text).map(f => f.text as string);
     const images = attachedFiles.filter(f => f.imageData).map(f => ({
       data: f.imageData as string,
-      mimeType: "image/png" // Default, Gemini biasanya mendeteksi otomatis
+      mimeType: "image/png"
     }));
 
     onGenerate({
