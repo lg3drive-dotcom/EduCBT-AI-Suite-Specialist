@@ -19,6 +19,7 @@ const QuestionEditor: React.FC<Props> = ({ question, onSave, onClose }) => {
   const [isGeneratingExpl, setIsGeneratingExpl] = useState(false);
   const [loadingLatex, setLoadingLatex] = useState<Record<string, boolean>>({});
 
+  // Trigger KaTeX rendering after UI updates
   useEffect(() => {
     // @ts-ignore
     if (window.renderMathInElement) {
@@ -45,9 +46,11 @@ const QuestionEditor: React.FC<Props> = ({ question, onSave, onClose }) => {
   const handleApplyLatex = async (field: 'text' | 'explanation' | 'option', index?: number) => {
     let sourceText = "";
     const key = index !== undefined ? `option-${index}` : field;
+
     if (field === 'text') sourceText = edited.text;
     else if (field === 'explanation') sourceText = edited.explanation;
     else if (field === 'option' && index !== undefined) sourceText = edited.options[index];
+
     if (!sourceText.trim()) return;
 
     setLoadingLatex(prev => ({ ...prev, [key]: true }));
@@ -56,27 +59,61 @@ const QuestionEditor: React.FC<Props> = ({ question, onSave, onClose }) => {
       if (field === 'text') setEdited({ ...edited, text: latexText });
       else if (field === 'explanation') setEdited({ ...edited, explanation: latexText });
       else if (field === 'option' && index !== undefined) {
-        const newOps = [...edited.options]; newOps[index] = latexText; setEdited({ ...edited, options: newOps });
+        const newOps = [...edited.options];
+        newOps[index] = latexText;
+        setEdited({ ...edited, options: newOps });
       }
-    } catch (err) { alert("Gagal LaTeX."); } finally { setLoadingLatex(prev => ({ ...prev, [key]: false })); }
+    } catch (err) {
+      alert("Gagal konversi ke LaTeX.");
+    } finally {
+      setLoadingLatex(prev => ({ ...prev, [key]: false }));
+    }
   };
 
   const handleGenerateAIExplanation = async () => {
+    if (!edited.text) {
+      alert("Teks soal harus diisi terlebih dahulu.");
+      return;
+    }
+    
     setIsGeneratingExpl(true);
     try {
       const aiExplanation = await generateExplanationForQuestion(edited);
       setEdited(prev => ({ ...prev, explanation: aiExplanation }));
-    } catch (err) { alert("Gagal AI."); } finally { setIsGeneratingExpl(false); }
+    } catch (err) {
+      alert("Gagal generate pembahasan. Coba lagi nanti.");
+    } finally {
+      setIsGeneratingExpl(false);
+    }
   };
 
   const isTableType = edited.type === QuestionType.BenarSalah || edited.type === QuestionType.SesuaiTidakSesuai;
+
+  const LatexButton = ({ onClick, isLoading }: { onClick: () => void, isLoading: boolean }) => (
+    <button 
+      type="button" 
+      onClick={onClick}
+      disabled={isLoading}
+      className={`flex items-center gap-1 px-2 py-1 rounded text-[9px] font-black uppercase tracking-tighter transition-all border ${
+        isLoading ? 'bg-slate-100 text-slate-400 border-slate-200' : 'bg-indigo-50 text-indigo-700 border-indigo-100 hover:bg-indigo-600 hover:text-white'
+      }`}
+    >
+      {isLoading ? (
+        <div className="w-2.5 h-2.5 border-2 border-slate-400 border-t-transparent rounded-full animate-spin"></div>
+      ) : (
+        <span>&sum; LaTeX</span>
+      )}
+    </button>
+  );
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
       <div className="bg-white w-full max-w-5xl max-h-[95vh] rounded-2xl shadow-2xl overflow-hidden flex flex-col">
         <div className="px-6 py-4 border-b flex justify-between items-center bg-indigo-50/50">
-          <h2 className="text-xl font-black text-indigo-900">Editor Soal (Support HTML)</h2>
-          <button onClick={onClose} className="p-2 text-slate-400 hover:text-rose-500"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg></button>
+          <h2 className="text-xl font-black text-indigo-900">Edit Soal {edited.type}</h2>
+          <button onClick={onClose} className="p-2 text-slate-400 hover:text-rose-500 transition-colors">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+          </button>
         </div>
 
         <div className="flex-grow overflow-y-auto p-6 space-y-6">
@@ -84,27 +121,55 @@ const QuestionEditor: React.FC<Props> = ({ question, onSave, onClose }) => {
             <div className="lg:col-span-7 space-y-4">
               <div>
                 <div className="flex justify-between items-center mb-2">
-                  <label className="text-[10px] font-black uppercase text-slate-500">Isi Soal (HTML OK)</label>
-                  <button onClick={() => handleApplyLatex('text')} className="text-[9px] font-black uppercase text-indigo-600 bg-indigo-50 px-2 py-1 rounded">Latex Fix</button>
+                  <label className="block text-[10px] font-black uppercase text-slate-500">Teks Soal</label>
+                  <LatexButton onClick={() => handleApplyLatex('text')} isLoading={loadingLatex['text']} />
                 </div>
-                <textarea rows={5} className="w-full p-4 rounded-xl border border-slate-200 text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-500" value={edited.text} onChange={(e) => setEdited({...edited, text: e.target.value})} />
-                <div className="mt-2 p-3 bg-slate-50 border rounded-lg text-xs" dangerouslySetInnerHTML={{ __html: edited.text }}></div>
+                <textarea rows={6} className="w-full p-4 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-indigo-500 outline-none font-medium" value={edited.text} onChange={(e) => setEdited({...edited, text: e.target.value})} />
               </div>
               <ImageControl label="Gambar Stimulus" currentImage={edited.image} onImageChange={(img) => setEdited({...edited, image: img})} />
             </div>
 
             <div className="lg:col-span-5 space-y-4">
-              <label className="text-[10px] font-black uppercase text-slate-500">{isTableType ? 'Pernyataan' : 'Pilihan Jawaban'}</label>
-              <div className="space-y-2">
+              <div className="flex justify-between items-center">
+                <label className="block text-[10px] font-black uppercase text-slate-500">{isTableType ? 'Pernyataan' : 'Opsi Jawaban'}</label>
+                <button onClick={() => {
+                  const newOptions = [...edited.options, ""];
+                  let newAns = edited.correctAnswer;
+                  if (isTableType) newAns = [...(Array.isArray(edited.correctAnswer) ? edited.correctAnswer : []) as boolean[], false];
+                  setEdited({...edited, options: newOptions, correctAnswer: newAns});
+                }} className="text-[10px] font-bold text-indigo-600 hover:underline">+ Tambah</button>
+              </div>
+
+              <div className="space-y-3">
                 {edited.options.map((opt, i) => (
-                  <div key={i} className="flex flex-col gap-1 p-3 bg-slate-50 rounded-xl border">
-                    <div className="flex items-center gap-2">
-                      <button onClick={() => handleCorrectAnswerChange(i)} className={`w-8 h-8 rounded flex items-center justify-center text-[10px] font-black border-2 transition-all ${isTableType ? ((edited.correctAnswer as boolean[])[i] ? 'bg-emerald-500 border-emerald-500 text-white' : 'bg-rose-500 border-rose-500 text-white') : ((Array.isArray(edited.correctAnswer) ? (edited.correctAnswer as number[]).includes(i) : edited.correctAnswer === i) ? 'bg-emerald-500 border-emerald-500 text-white' : 'bg-white border-slate-200 text-slate-400')}`}>
-                        {isTableType ? ((edited.correctAnswer as boolean[])[i] ? 'B' : 'S') : String.fromCharCode(65+i)}
-                      </button>
-                      <input className="flex-grow bg-transparent border-b border-slate-200 outline-none text-sm font-bold" value={opt} onChange={(e) => { const newOps = [...edited.options]; newOps[i] = e.target.value; setEdited({...edited, options: newOps}); }} />
+                  <div key={i} className="flex items-center gap-2 p-3 bg-slate-50 rounded-xl border border-slate-100">
+                    <button type="button" onClick={() => handleCorrectAnswerChange(i)} className={`w-8 h-8 flex-shrink-0 rounded flex items-center justify-center text-[10px] font-black border-2 transition-all ${
+                      isTableType ? (
+                        (edited.correctAnswer as boolean[])[i] ? 'bg-emerald-500 border-emerald-500 text-white' : 'bg-rose-500 border-rose-500 text-white'
+                      ) : (
+                        (Array.isArray(edited.correctAnswer) ? (edited.correctAnswer as number[]).includes(i) : edited.correctAnswer === i) 
+                        ? 'bg-emerald-500 border-emerald-500 text-white' 
+                        : 'bg-white border-slate-200 text-slate-400'
+                      )
+                    }`}>
+                      {isTableType ? ((edited.correctAnswer as boolean[])[i] ? 'B' : 'S') : String.fromCharCode(65+i)}
+                    </button>
+                    <div className="flex-grow flex flex-col gap-1">
+                      <input type="text" className="w-full bg-transparent border-b border-slate-200 outline-none text-sm font-bold py-1" value={opt} onChange={(e) => {
+                        const newOps = [...edited.options]; newOps[i] = e.target.value; setEdited({...edited, options: newOps});
+                      }} />
+                      <div className="flex justify-start">
+                        <LatexButton onClick={() => handleApplyLatex('option', i)} isLoading={loadingLatex[`option-${i}`]} />
+                      </div>
                     </div>
-                    <div className="text-[10px] text-slate-500 mt-1" dangerouslySetInnerHTML={{ __html: opt }}></div>
+                    <button onClick={() => {
+                      const newOps = [...edited.options]; newOps.splice(i, 1);
+                      let newAns = edited.correctAnswer;
+                      if (isTableType && Array.isArray(newAns)) {
+                         const arr = [...newAns]; arr.splice(i, 1); newAns = arr;
+                      }
+                      setEdited({...edited, options: newOps, correctAnswer: newAns});
+                    }} className="text-rose-400 hover:text-rose-600 transition-colors self-start mt-1"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7" /></svg></button>
                   </div>
                 ))}
               </div>
@@ -113,17 +178,30 @@ const QuestionEditor: React.FC<Props> = ({ question, onSave, onClose }) => {
           
           <div className="bg-amber-50/30 p-4 rounded-2xl border border-amber-100">
             <div className="flex justify-between items-center mb-3">
-              <label className="text-[10px] font-black uppercase text-amber-700">Pembahasan (Akan tampil sebagai HTML)</label>
-              <button disabled={isGeneratingExpl} onClick={handleGenerateAIExplanation} className="px-3 py-1.5 bg-amber-100 text-amber-700 rounded-lg text-[10px] font-black uppercase">✨ Auto AI</button>
+              <label className="block text-[10px] font-black uppercase text-amber-700 tracking-widest">Pembahasan / Analisis Kunci</label>
+              <div className="flex gap-2">
+                <LatexButton onClick={() => handleApplyLatex('explanation')} isLoading={loadingLatex['explanation']} />
+                <button 
+                  type="button"
+                  disabled={isGeneratingExpl}
+                  onClick={handleGenerateAIExplanation}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all shadow-sm ${
+                    isGeneratingExpl 
+                    ? 'bg-slate-200 text-slate-400 cursor-not-allowed' 
+                    : 'bg-amber-100 text-amber-700 hover:bg-amber-200 border border-amber-200'
+                  }`}
+                >
+                  {isGeneratingExpl ? <div className="w-3 h-3 border-2 border-amber-500 border-t-transparent rounded-full animate-spin"></div> : '✨ Auto-Pembahasan'}
+                </button>
+              </div>
             </div>
-            <textarea rows={4} className="w-full p-4 rounded-xl border border-amber-200 text-sm italic outline-none mb-2" value={edited.explanation} onChange={(e) => setEdited({...edited, explanation: e.target.value})} />
-            <div className="p-3 bg-white border border-amber-100 rounded-lg text-xs italic" dangerouslySetInnerHTML={{ __html: edited.explanation }}></div>
+            <textarea rows={4} className="w-full p-4 rounded-xl border border-amber-200 bg-white text-sm italic text-slate-700 outline-none focus:ring-2 focus:ring-amber-400" value={edited.explanation} onChange={(e) => setEdited({...edited, explanation: e.target.value})} placeholder="Masukkan penjelasan..." />
           </div>
         </div>
 
         <div className="px-6 py-4 border-t flex justify-end gap-3 bg-slate-50">
-          <button onClick={onClose} className="px-6 py-2 text-sm font-bold text-slate-500">Batal</button>
-          <button onClick={() => onSave(edited)} className="px-8 py-2 bg-indigo-600 text-white rounded-xl text-sm font-black uppercase shadow-lg">Simpan</button>
+          <button onClick={onClose} className="px-6 py-2 text-sm font-bold text-slate-500 hover:text-slate-700">Batal</button>
+          <button onClick={() => onSave(edited)} className="px-8 py-2 bg-indigo-600 text-white rounded-xl text-sm font-black uppercase tracking-widest shadow-lg hover:bg-indigo-700 transition-all">Simpan Perubahan</button>
         </div>
       </div>
     </div>
