@@ -45,7 +45,7 @@ const App: React.FC = () => {
         text: q.text || "Soal tanpa teks",
         options: Array.isArray(q.options) ? q.options : [],
         type: q.type || QuestionType.PilihanGanda,
-        level: q.level || "L1",
+        level: q.level || "C1 Mengingat", // Diperbarui dari L1
         explanation: q.explanation || ""
       }));
       return [...prev, ...sanitized];

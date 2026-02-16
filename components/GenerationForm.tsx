@@ -33,7 +33,12 @@ const GenerationForm: React.FC<Props> = ({ onGenerate, onImportJson, isLoading }
       [QuestionType.Isian]: 0,
       [QuestionType.Uraian]: 0,
     },
-    levelCounts: { 'L1': 2, 'L2': 2, 'L3': 1 },
+    // Kembali menggunakan L1, L2, L3 untuk mapping yang lebih sederhana bagi guru
+    levelCounts: { 
+      'L1': 2, 
+      'L2': 2, 
+      'L3': 1 
+    },
     quizToken: '',
     specialInstructions: ''
   });
@@ -82,7 +87,6 @@ const GenerationForm: React.FC<Props> = ({ onGenerate, onImportJson, isLoading }
         const result = await mammoth.extractRawText({ arrayBuffer });
         return { id: Math.random().toString(36).substring(7), name: file.name, type: 'docx', text: result.value, mimeType: file.type };
       } else if (fileExt === 'xlsx' || fileExt === 'xls' || file.type.includes('excel') || file.type.includes('spreadsheetml')) {
-        // LOGIKA BARU: Ekstraksi Excel sebagai Teks Referensi
         return new Promise((resolve) => {
           const reader = new FileReader();
           reader.onload = (e) => {
@@ -169,13 +173,9 @@ const GenerationForm: React.FC<Props> = ({ onGenerate, onImportJson, isLoading }
             correctAnswer = rawKunci.split(/[,\s;]+/).map(s => s.trim().toUpperCase().startsWith('S'));
           }
 
-          if (Array.isArray(correctAnswer) && correctAnswer.length < options.length) {
-            correctAnswer = [...correctAnswer, ...new Array(options.length - correctAnswer.length).fill(false)];
-          }
-
           return {
             id: `excel_${Date.now()}_${index}`,
-            type, level: row['Level'] || 'L1', subject: row['Mata Pelaj'] || formData.subject,
+            type, level: row['Level'] || 'C1 Mengingat', subject: row['Mata Pelaj'] || formData.subject,
             phase: formData.phase, material: row['Materi'] || formData.material, text: row['Teks Soal'] || "",
             image: row['URL Gamb'] || "", explanation: row['Pembahasa'] || "", options, correctAnswer,
             order: parseInt(row['No']) || (index + 1), quizToken: (row['Token'] || formData.quizToken || "IMPORT").toUpperCase(),
@@ -279,7 +279,7 @@ const GenerationForm: React.FC<Props> = ({ onGenerate, onImportJson, isLoading }
         </div>
       </div>
 
-      {/* Area Upload - Sekarang Mendukung Excel */}
+      {/* Area Upload */}
       <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
         <div className="flex justify-between items-center mb-3">
           <label className="block text-[10px] font-black text-slate-500 uppercase">Dokumen Referensi (Mendukung Excel/Word/PDF/Foto)</label>
@@ -321,21 +321,28 @@ const GenerationForm: React.FC<Props> = ({ onGenerate, onImportJson, isLoading }
         <textarea required rows={1} className="w-full px-4 py-2 rounded-lg border border-slate-200 bg-white text-sm text-slate-900 outline-none focus:border-indigo-500" value={formData.material} onChange={(e) => setFormData({ ...formData, material: e.target.value })} placeholder="Masukkan materi pembahasan..." />
       </div>
 
+      {/* Manual Levels - Kembali ke format L1, L2, L3 */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="bg-amber-50/50 p-4 rounded-xl border border-amber-100 shadow-sm">
           <label className="block text-[10px] font-black text-amber-700 uppercase mb-3 tracking-widest">Level Kognitif (Manual)</label>
           <div className="flex gap-2">
-            {['L1', 'L2', 'L3'].map(lvl => (
-              <div key={lvl} className="flex-1 bg-white p-2 rounded-xl border border-amber-200 text-center shadow-sm">
-                <span className="block text-[10px] font-black text-amber-600 mb-1">{lvl}</span>
-                <input type="number" min={0} className="w-full text-center font-black text-slate-900 outline-none bg-transparent text-base" value={formData.levelCounts[lvl]} onChange={(e) => setFormData({...formData, levelCounts: {...formData.levelCounts, [lvl]: parseInt(e.target.value) || 0}})} />
+            {[
+              { id: 'L1', sub: 'C1-C2' },
+              { id: 'L2', sub: 'C3' },
+              { id: 'L3', sub: 'C4-C6' }
+            ].map(lvl => (
+              <div key={lvl.id} className="flex-1 bg-white p-2 rounded-xl border border-amber-200 text-center shadow-sm">
+                <span className="block text-[10px] font-black text-amber-600 leading-tight">{lvl.id}</span>
+                <span className="block text-[8px] font-bold text-slate-400 uppercase mb-1">{lvl.sub}</span>
+                <input type="number" min={0} className="w-full text-center font-black text-slate-900 outline-none bg-transparent text-base" value={formData.levelCounts[lvl.id] || 0} onChange={(e) => setFormData({...formData, levelCounts: {...formData.levelCounts, [lvl.id]: parseInt(e.target.value) || 0}})} />
               </div>
             ))}
           </div>
+          <p className="mt-2 text-[8px] text-amber-600 font-bold uppercase text-center italic">* AI akan memetakan L1 ke C1/C2, L2 ke C3, dan L3 ke C4/C5/C6 otomatis.</p>
         </div>
         <div className="bg-yellow-50/50 p-4 rounded-xl border border-yellow-100 shadow-sm">
           <label className="block text-[10px] font-black text-yellow-700 uppercase mb-3 tracking-widest">Tipe Soal (Manual)</label>
-          <div className="max-h-[140px] overflow-y-auto space-y-1.5 pr-1 custom-scrollbar">
+          <div className="max-h-[120px] overflow-y-auto space-y-1.5 pr-1 custom-scrollbar">
             {Object.values(QuestionType).map(type => (
               <div key={type} className="flex items-center justify-between bg-white px-3 py-2 rounded-xl border border-yellow-200 shadow-sm">
                 <span className="text-[10px] font-bold text-slate-600 uppercase leading-tight">{type}</span>
