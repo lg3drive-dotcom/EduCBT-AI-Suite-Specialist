@@ -42,8 +42,12 @@ const QuestionList: React.FC<Props> = ({
   };
 
   const confirmDelete = (id: string) => {
-    if (window.confirm("Pindahkan soal ini ke tempat sampah?")) {
+    if (isTrashView) {
       onDelete(id);
+    } else {
+      if (window.confirm("Pindahkan soal ini ke tempat sampah?")) {
+        onDelete(id);
+      }
     }
   };
 
@@ -68,18 +72,18 @@ const QuestionList: React.FC<Props> = ({
         const isAnalyzing = analyzingIds.has(q.id);
 
         return (
-          <div key={q.id} className={`bg-white rounded-2xl border-2 shadow-sm overflow-hidden transition-all ${isTrashView ? 'opacity-70 grayscale' : 'border-slate-100 hover:border-indigo-300'}`}>
+          <div key={q.id} className={`bg-white rounded-2xl border-2 shadow-sm overflow-hidden transition-all ${isTrashView ? 'opacity-60 grayscale border-slate-200' : 'border-slate-100 hover:border-indigo-300'}`}>
             
             {/* Metadata */}
-            <div className="bg-slate-50 px-4 py-3 flex items-center justify-between border-b border-slate-100">
+            <div className={`px-4 py-3 flex items-center justify-between border-b ${isTrashView ? 'bg-slate-100 border-slate-200' : 'bg-slate-50 border-slate-100'}`}>
               <div className="flex items-center gap-2">
                 <div className="flex items-center gap-1 bg-white border px-2 py-1 rounded-lg shadow-sm">
                   <span className="text-[9px] font-black text-slate-400">#</span>
-                  <input type="number" className="w-8 text-xs font-black text-center outline-none bg-transparent" value={q.order} onChange={(e) => onQuickUpdate?.(q.id, 'order', e.target.value)} />
+                  <input disabled={isTrashView} type="number" className="w-8 text-xs font-black text-center outline-none bg-transparent disabled:opacity-50" value={q.order} onChange={(e) => onQuickUpdate?.(q.id, 'order', e.target.value)} />
                 </div>
                 <div className="flex items-center gap-1 bg-white border px-2 py-1 rounded-lg shadow-sm">
                   <span className="text-[9px] font-black text-slate-400 uppercase">Tkn</span>
-                  <input type="text" className="w-16 text-[9px] font-black uppercase outline-none bg-transparent" value={q.quizToken} onChange={(e) => onQuickUpdate?.(q.id, 'quizToken', e.target.value.toUpperCase())} />
+                  <input disabled={isTrashView} type="text" className="w-16 text-[9px] font-black uppercase outline-none bg-transparent disabled:opacity-50" value={q.quizToken} onChange={(e) => onQuickUpdate?.(q.id, 'quizToken', e.target.value.toUpperCase())} />
                 </div>
                 <span className={`px-2 py-1 bg-indigo-600 text-white text-[9px] font-black rounded-lg uppercase tracking-widest ${isAnalyzing ? 'animate-pulse opacity-50' : ''}`}>
                   {isAnalyzing ? '...' : q.level}
@@ -91,14 +95,20 @@ const QuestionList: React.FC<Props> = ({
                 )}
               </div>
               {isTrashView && (
-                <button onClick={() => onRestore?.(q.id)} className="px-3 py-1 bg-emerald-600 text-white rounded-lg text-[10px] font-black uppercase">Pulihkan</button>
+                <div className="flex gap-2">
+                  <button onClick={() => onRestore?.(q.id)} className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-[10px] font-black uppercase shadow-sm hover:bg-emerald-700 flex items-center gap-1.5">
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                    Pulihkan
+                  </button>
+                  <button onClick={() => confirmDelete(q.id)} className="px-3 py-1.5 bg-rose-600 text-white rounded-lg text-[10px] font-black uppercase shadow-sm hover:bg-rose-700">Hapus Permanen</button>
+                </div>
               )}
             </div>
 
-            {/* Toolbar */}
+            {/* Toolbar - Sembunyikan jika di Sampah */}
             {!isTrashView && (
               <div className="bg-indigo-50/30 px-4 py-2 flex flex-wrap items-center justify-between gap-3 border-b border-indigo-100">
-                <select className="px-3 py-1.5 bg-white border border-indigo-200 rounded-xl text-[10px] font-black uppercase text-indigo-900 shadow-sm" value={q.type} onChange={(e) => onChangeType?.(q.id, e.target.value as QuestionType)}>
+                <select className="px-3 py-1.5 bg-white border border-indigo-200 rounded-xl text-[10px] font-black uppercase text-indigo-900 shadow-sm outline-none" value={q.type} onChange={(e) => onChangeType?.(q.id, e.target.value as QuestionType)}>
                   {Object.values(QuestionType).map(t => <option key={t} value={t}>{t}</option>)}
                 </select>
                 <div className="flex items-center gap-1.5">
