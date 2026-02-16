@@ -105,7 +105,7 @@ const QuestionList: React.FC<Props> = ({
               )}
             </div>
 
-            {/* Toolbar - Sembunyikan jika di Sampah */}
+            {/* Toolbar */}
             {!isTrashView && (
               <div className="bg-indigo-50/30 px-4 py-2 flex flex-wrap items-center justify-between gap-3 border-b border-indigo-100">
                 <select className="px-3 py-1.5 bg-white border border-indigo-200 rounded-xl text-[10px] font-black uppercase text-indigo-900 shadow-sm outline-none" value={q.type} onChange={(e) => onChangeType?.(q.id, e.target.value as QuestionType)}>
@@ -123,21 +123,10 @@ const QuestionList: React.FC<Props> = ({
               </div>
             )}
 
-            {/* Revisi Panel */}
-            {promptingId === q.id && (
-              <div className="p-4 bg-emerald-50 border-b-2 border-emerald-200">
-                <input autoFocus className="w-full px-4 py-2 rounded-xl border-2 border-emerald-300 text-sm outline-none mb-2" placeholder="Instruksi revisi AI..." value={regenPrompt} onChange={(e) => setRegenPrompt(e.target.value)} />
-                <div className="flex justify-end gap-2">
-                  <button onClick={() => setPromptingId(null)} className="px-4 py-2 text-slate-500 text-xs font-bold uppercase">Batal</button>
-                  <button onClick={() => { onRegenerate?.(q.id, regenPrompt); setPromptingId(null); }} className="px-6 py-2 bg-emerald-600 text-white rounded-xl text-xs font-black uppercase shadow-lg">PROSES</button>
-                </div>
-              </div>
-            )}
-
             {/* Content Area */}
             <div className="p-6 space-y-5">
               <div className="space-y-2">
-                <div className="text-slate-900 font-bold text-base leading-relaxed tracking-tight latex-content" dangerouslySetInnerHTML={{ __html: q.text }}></div>
+                <div className="text-slate-900 font-bold text-base leading-relaxed tracking-tight latex-content prose-slate max-w-none" dangerouslySetInnerHTML={{ __html: q.text }}></div>
                 {isMCMA && <span className="inline-block px-3 py-1 bg-amber-100 text-amber-800 rounded-full text-[10px] font-black uppercase border border-amber-200">Pilihan Ganda Kompleks</span>}
               </div>
               
@@ -164,7 +153,7 @@ const QuestionList: React.FC<Props> = ({
                         return (
                           <tr key={i} className="hover:bg-slate-50">
                             <td className="px-4 py-4 text-center text-slate-300 font-black">{i+1}</td>
-                            <td className="px-4 py-4 text-slate-900 font-bold leading-snug" dangerouslySetInnerHTML={{ __html: opt }}></td>
+                            <td className="px-4 py-4 text-slate-900 font-bold leading-snug prose-sm" dangerouslySetInnerHTML={{ __html: opt }}></td>
                             <td className="px-4 py-4 text-center">
                               <div className={`w-8 h-8 mx-auto rounded-xl border-2 flex items-center justify-center ${isTrue ? 'bg-emerald-500 border-emerald-500 shadow-lg' : 'border-slate-200 bg-white'}`}>
                                 {isTrue && <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="4" d="M5 13l4 4L19 7" /></svg>}
@@ -188,7 +177,7 @@ const QuestionList: React.FC<Props> = ({
                     return (
                       <div key={i} className={`p-4 rounded-2xl border-2 flex items-center gap-4 transition-all ${isCorrect ? 'bg-emerald-50 border-emerald-400 shadow-md' : 'bg-white border-slate-100'}`}>
                         <span className={`w-9 h-9 flex-shrink-0 rounded-xl flex items-center justify-center text-sm font-black ${isCorrect ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-400'}`}>{String.fromCharCode(65+i)}</span>
-                        <div className={`text-sm font-bold leading-tight ${isCorrect ? 'text-emerald-900' : 'text-slate-700'}`} dangerouslySetInnerHTML={{ __html: opt }}></div>
+                        <div className={`text-sm font-bold leading-tight prose-sm ${isCorrect ? 'text-emerald-900' : 'text-slate-700'}`} dangerouslySetInnerHTML={{ __html: opt }}></div>
                       </div>
                     );
                   })}
@@ -200,9 +189,9 @@ const QuestionList: React.FC<Props> = ({
                   <div className="bg-indigo-600 p-2 rounded-xl flex-shrink-0 shadow-lg h-fit">
                     <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg>
                   </div>
-                  <div>
+                  <div className="flex-1">
                     <span className="font-black uppercase block mb-1 text-[10px] tracking-widest text-indigo-600">Pembahasan:</span>
-                    <div className="font-medium italic leading-relaxed opacity-90" dangerouslySetInnerHTML={{ __html: q.explanation }}></div>
+                    <div className="font-medium italic leading-relaxed opacity-90 prose-sm" dangerouslySetInnerHTML={{ __html: q.explanation }}></div>
                   </div>
                 </div>
               )}
