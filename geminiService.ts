@@ -1,4 +1,3 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
 import { EduCBTQuestion, GenerationConfig, QuestionType } from "./types";
 
@@ -16,33 +15,34 @@ const VALID_LEVELS = [
   "C4 Menganalisis", "C5 Mengevaluasi", "C6 Mencipta"
 ];
 
-// Helper untuk menormalkan tipe soal dari berbagai variasi teks
 export const normalizeQuestionType = (type: string): string => {
-  const t = String(type).toUpperCase();
-  if (t.includes("PILIHAN GANDA") || t.includes("MULTIPLE_CHOICE") || t === "PG") return QuestionType.PilihanGanda;
-  if (t.includes("JAMAK") || t.includes("MCMA") || t.includes("COMPLEX")) return QuestionType.MCMA;
-  if (t.includes("BENAR") || t.includes("B/S") || t.includes("TRUE_FALSE") || t.includes("BENARSALAH")) return QuestionType.BenarSalah;
-  if (t.includes("SESUAI") || t.includes("S/TS") || t.includes("MATCHING")) return QuestionType.SesuaiTidakSesuai;
-  if (t.includes("ISIAN") || t.includes("SHORT_ANSWER")) return QuestionType.Isian;
-  if (t.includes("URAIAN") || t.includes("ESSAY")) return QuestionType.Uraian;
-  return QuestionType.PilihanGanda; // Default
+  const t = String(type).toUpperCase().trim();
+  
+  if (t.includes("PILIHAN GANDA") || t === "PG" || t === "PILIHAN_GANDA") return QuestionType.PilihanGanda;
+  if (t.includes("JAMAK") || t.includes("MCMA") || t.includes("COMPLEX") || t.includes("PILIHAN JAMAK")) return QuestionType.MCMA;
+  if (t.includes("BENAR") || t.includes("B/S") || t === "BENAR/SALAH" || t === "(BENAR/SALAH)") return QuestionType.BenarSalah;
+  if (t.includes("SESUAI") || t.includes("S/TS") || t === "SESUAI/TIDAK SESUAI" || t === "(SESUAI/TIDAK SESUAI)") return QuestionType.SesuaiTidakSesuai;
+  if (t.includes("ISIAN") || t === "SHORT_ANSWER") return QuestionType.Isian;
+  if (t.includes("URAIAN") || t === "ESSAY") return QuestionType.Uraian;
+  
+  return QuestionType.PilihanGanda;
 };
 
 const SYSTEM_INSTRUCTION = `
 Persona: Pakar Kurikulum Nasional & Pengembang EduCBT Pro.
 Tugas: Membuat soal evaluasi format JSON array yang VALID, VARIATIF, dan KONSISTEN.
 
-### ATURAN LEVEL KOGNITIF (SANGAT PENTING) ###
+### ATURAN LEVEL KOGNITIF ###
 DILARANG menggunakan level seperti "SD", "SMP", "SMA", atau "L1/L2".
 HANYA gunakan label Bloom berikut secara eksak:
-- "C1 Mengingat" (Untuk soal hafalan)
-- "C2 Memahami" (Untuk soal konsep)
-- "C3 Menerapkan" (Untuk soal aplikasi)
-- "C4 Menganalisis" (HOTS - Analisis stimulus)
-- "C5 Mengevaluasi" (HOTS - Menilai argumen)
-- "C6 Mencipta" (HOTS - Membuat solusi)
+- "C1 Mengingat"
+- "C2 Memahami"
+- "C3 Menerapkan"
+- "C4 Menganalisis"
+- "C5 Mengevaluasi"
+- "C6 Mencipta"
 
-### ATURAN HTML (KRUSIAL) ###
+### ATURAN HTML ###
 - Gunakan tag HTML RAW (<b>, <i>, <br>, <ul>, <div style="...">).
 - JANGAN meng-escape tag HTML. Gunakan < dan > secara langsung.
 
@@ -165,52 +165,68 @@ export const convertTextToLatex = async (text: string): Promise<string> => {
   } catch { return text; }
 };
 
-const normalizeQuestion = (q: any, config: any): EduCBTQuestion => {
+export const normalizeQuestion = (q: any, config: any): EduCBTQuestion => {
   let type = normalizeQuestionType(q.type);
   let correctedAnswer = q.correctAnswer;
   const options = Array.isArray(q.options) ? q.options.map(opt => unescapeHtml(String(opt))) : [];
   const text = unescapeHtml(q.text || "");
   const explanation = unescapeHtml(q.explanation || "");
 
-  // Normalisasi Level - Cegah "SD" atau level salah lainnya
+  // Normalisasi Level
   let level = q.level || "C1 Mengingat";
+  const levelUpper = String(level).toUpperCase();
+  if (levelUpper.includes("L1") || levelUpper.includes("MUDAH") || levelUpper.includes("SEDANG") && !levelUpper.includes("HOTS")) {
+    if (levelUpper.includes("L1")) level = "C1 Mengingat";
+    else if (levelUpper.includes("L2") || levelUpper.includes("SEDANG")) level = "C3 Menerapkan";
+  } else if (levelUpper.includes("L3") || levelUpper.includes("HOTS") || levelUpper.includes("SULIT") || levelUpper.includes("MENENGA")) {
+    level = "C4 Menganalisis";
+  }
+  
   const foundValidLevel = VALID_LEVELS.find(v => level.includes(v.split(' ')[0]));
-  if (foundValidLevel) {
-    level = foundValidLevel;
-  } else if (level.includes("L1")) level = "C1 Mengingat";
-  else if (level.includes("L2")) level = "C3 Menerapkan";
-  else if (level.includes("L3")) level = "C4 Menganalisis";
-  else level = "C1 Mengingat"; // Fallback jika tetap aneh
+  if (foundValidLevel) level = foundValidLevel;
 
+  // Handle Answer Key Strings from Excel
   if (typeof correctedAnswer === 'string') {
-    if (correctedAnswer.startsWith('[') || correctedAnswer.startsWith('{')) {
-      try { correctedAnswer = JSON.parse(correctedAnswer); } catch(e) {}
-    } else if (correctedAnswer.includes(',')) {
-      correctedAnswer = correctedAnswer.split(',').map(s => {
+    const rawVal = correctedAnswer.trim();
+    if (rawVal.startsWith('[') || rawVal.startsWith('{')) {
+      try { correctedAnswer = JSON.parse(rawVal); } catch(e) {}
+    } else if (type === QuestionType.PilihanGanda) {
+      const charCode = rawVal.toUpperCase().charCodeAt(0);
+      if (charCode >= 65 && charCode <= 69) correctedAnswer = charCode - 65;
+      else correctedAnswer = parseInt(rawVal) || 0;
+    } else if (type === QuestionType.MCMA) {
+      correctedAnswer = rawVal.split(/[,\s;]+/).map(s => {
+        const v = s.trim().toUpperCase();
+        const code = v.charCodeAt(0);
+        if (code >= 65 && code <= 69) return code - 65;
+        return parseInt(v) - 1;
+      }).filter(v => !isNaN(v) && v >= 0);
+    } else if (type === QuestionType.BenarSalah || type === QuestionType.SesuaiTidakSesuai) {
+      correctedAnswer = rawVal.split(/[,\s;]+/).map(s => {
         const val = s.trim().toUpperCase();
-        if (val === 'A') return 0; if (val === 'B') return 1; if (val === 'C') return 2;
-        if (val === 'D') return 3; if (val === 'E') return 4;
-        return parseInt(val);
-      }).filter(n => !isNaN(n));
+        // B, S, T, S...
+        // T usually means "Tidak Sesuai" (False) or "True" in some weird maps.
+        // Based on common Indonesian CBT: B=Benar (True), S=Salah (False). 
+        // For Sesuai/Tidak: S=Sesuai (True), T/TS=Tidak Sesuai (False).
+        if (type === QuestionType.BenarSalah) {
+          return val === 'B' || val === 'BENAR' || val === 'TRUE' || val === 'T'; // Some use T for True (Ture)
+        } else {
+          return val === 'S' || val === 'SESUAI' || val === 'TRUE';
+        }
+      });
     }
   }
 
-  if (type === QuestionType.BenarSalah || type === QuestionType.SesuaiTidakSesuai) {
-    if (!Array.isArray(correctedAnswer)) correctedAnswer = new Array(options.length).fill(false);
-    else correctedAnswer = correctedAnswer.map(v => v === true || v === 'true' || String(v).toLowerCase() === 'benar' || String(v).toLowerCase() === 'sesuai' || String(v).toLowerCase() === 'b' || String(v).toLowerCase() === 's');
-  } else if (type === QuestionType.MCMA) {
-    if (!Array.isArray(correctedAnswer)) {
-      const p = parseInt(correctedAnswer);
-      correctedAnswer = isNaN(p) ? [] : [p];
-    } else {
-      correctedAnswer = correctedAnswer.map(v => parseInt(v)).filter(v => !isNaN(v));
-    }
-  } else if (type === QuestionType.PilihanGanda) {
-    correctedAnswer = parseInt(correctedAnswer);
-    if (isNaN(correctedAnswer)) correctedAnswer = 0;
+  // Final check for Boolean arrays (Benar/Salah)
+  if ((type === QuestionType.BenarSalah || type === QuestionType.SesuaiTidakSesuai) && Array.isArray(correctedAnswer)) {
+      correctedAnswer = (correctedAnswer as any[]).map(v => {
+          if (typeof v === 'boolean') return v;
+          const s = String(v).toUpperCase();
+          if (type === QuestionType.BenarSalah) return s === 'B' || s === 'BENAR' || s === 'TRUE' || s === 'T' || v === 1;
+          return s === 'S' || s === 'SESUAI' || s === 'TRUE' || v === 1;
+      });
   }
 
-  // Prioritas Token: Gunakan token dari config user jika ada, jika tidak pakai dari AI
   const finalToken = (config.quizToken || q.quizToken || "AUTO").toString().toUpperCase();
 
   return {

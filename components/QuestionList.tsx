@@ -1,5 +1,4 @@
-
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { EduCBTQuestion, QuestionType } from '../types';
 import { normalizeQuestionType } from '../geminiService';
 
@@ -22,13 +21,31 @@ const QuestionList: React.FC<Props> = ({
   const [promptingId, setPromptingId] = useState<string | null>(null);
   const [regenPrompt, setRegenPrompt] = useState('');
   const [analyzingIds, setAnalyzingIds] = useState<Set<string>>(new Set());
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // @ts-ignore
-    if (window.renderMathInElement) {
+    const renderMath = () => {
       // @ts-ignore
-      window.renderMathInElement(document.body);
-    }
+      if (window.renderMathInElement && containerRef.current) {
+        try {
+          // @ts-ignore
+          window.renderMathInElement(containerRef.current, {
+            delimiters: [
+              {left: '$$', right: '$$', display: true},
+              {left: '$', right: '$', display: false},
+              {left: '\\(', right: '\\)', display: false},
+              {left: '\\[', right: '\\]', display: true}
+            ],
+            throwOnError: false
+          });
+        } catch (e) {
+          console.warn("KaTeX render failed:", e);
+        }
+      }
+    };
+
+    const timer = setTimeout(renderMath, 100);
+    return () => clearTimeout(timer);
   }, [questions]);
 
   const isOptionCorrect = (q: EduCBTQuestion, index: number): boolean => {
@@ -48,7 +65,7 @@ const QuestionList: React.FC<Props> = ({
   };
 
   return (
-    <div className="space-y-6 pb-20">
+    <div className="space-y-6 pb-20" ref={containerRef}>
       {questions.map((q) => {
         const qType = normalizeQuestionType(q.type);
         const isTableType = qType === QuestionType.BenarSalah || qType === QuestionType.SesuaiTidakSesuai;

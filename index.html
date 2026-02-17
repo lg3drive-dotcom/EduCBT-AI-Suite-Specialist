@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="id">
 <head>
@@ -16,40 +15,24 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <!-- LaTeX Rendering (KaTeX) -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
-    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
-    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js" onload="renderMathInElement(document.body);"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
     <style>
         :root { color-scheme: light; }
         body { 
           font-family: 'Inter', sans-serif; 
-          background-color: #f8fafc; /* slate-50 */
-          color: #0f172a; /* slate-900 */
+          background-color: #f8fafc;
+          color: #0f172a;
+          margin: 0;
+          padding: 0;
         }
         .katex { font-size: 1.1em; }
-        
-        /* Custom Scrollbar */
-        .custom-scrollbar::-webkit-scrollbar {
-          width: 5px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-track {
-          background: transparent;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb {
-          background: #e2e8f0;
-          border-radius: 10px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-          background: #cbd5e1;
-        }
-
-        /* Anti-Dark Mode for Inputs */
-        input, select, textarea {
-          background-color: #ffffff !important;
-          color: #0f172a !important;
-        }
-        input::placeholder, textarea::placeholder {
-          color: #94a3b8 !important;
-        }
+        .custom-scrollbar::-webkit-scrollbar { width: 5px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #cbd5e1; }
+        input, select, textarea { background-color: #ffffff !important; color: #0f172a !important; }
+        input::placeholder, textarea::placeholder { color: #94a3b8 !important; }
     </style>
 <script type="importmap">
 {
@@ -64,9 +47,8 @@
   }
 }
 </script>
-<link rel="stylesheet" href="/index.css">
 </head>
-<body class="bg-slate-50 text-slate-900">
+<body>
     <div id="root"></div>
 <script type="module" src="/index.tsx"></script>
 </body>
