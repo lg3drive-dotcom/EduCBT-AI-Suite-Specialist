@@ -1,47 +1,53 @@
 
 import { EduCBTQuestion, QuestionType } from "../types";
 
-const EXCEL_COLUMNS = [
-  "No", "ID", "Token", "Tipe Soal", "Level", "Mapel", "Fase", "Materi", 
-  "Teks Soal", "Gambar Soal", 
-  "Opsi A", "Gbr A", "Opsi B", "Gbr B", "Opsi C", "Gbr C", "Opsi D", "Gbr D", "Opsi E", "Gbr E",
-  "Kunci Jawaban", "Label True", "Label False", "Pembahasan"
-];
-
 export const downloadExcelTemplate = () => {
   // @ts-ignore
   const XLSX = window.XLSX;
   const wb = XLSX.utils.book_new();
 
-  const sampleData = [
+  const headers = [
     [
-      1, "q_sample_01", "DFGBIN", "Pilihan Ganda", "C2 Memahami", "Bahasa Indonesia", "Fase C", "Makna Kata",
-      "Apa makna denotatif dari 'Map'?", "https://i.ibb.co/example/stimulus.jpg",
-      "Tempat menyimpan dokumen", "", "Peta lokasi", "", "Tas belanja", "", "Amplop", "", "", "",
-      "A", "Benar", "Salah", "Map adalah penyimpan dokumen."
-    ],
-    [
-      2, "q_sample_02", "DFGBIN", "(Benar/Salah)", "C4 Menganalisis", "Bahasa Indonesia", "Fase C", "Informasi Tersurat",
-      "Tentukan benar atau salah pernyataan berikut:", "",
-      "Vina anak yang rajin", "", "Vina pergi ke pasar", "", "Cuaca sangat dingin", "", "", "", "", "",
-      "B, S, S", "Benar", "Salah", "Analisis berdasarkan teks paragraf 1."
-    ],
-    [
-      3, "q_sample_03", "DFGBIN", "Pilihan Jamak (MCMA)", "C2 Memahami", "Bahasa Indonesia", "Fase C", "Makna Konotatif",
-      "Apa makna 'Kepala Dingin'?", "",
-      "Sabar", "", "Tenang", "", "Pemarah", "", "", "", "", "",
-      "A, B", "Sesuai", "Tidak Sesuai", "Kepala dingin artinya tenang."
+      "No", "Tipe Soal", "Level", "Materi", "Teks Soal", "Gambar Soal (URL)",
+      "Opsi A", "Opsi B", "Opsi C", "Opsi D", "Opsi E",
+      "Kunci Jawaban", "Pembahasan", "Token Paket"
     ]
   ];
   
-  const wsSoal = XLSX.utils.aoa_to_sheet([EXCEL_COLUMNS, ...sampleData]);
+  const sampleData = [
+    [
+      1, "Pilihan Ganda", "L1", "Tata Surya", "Planet terdekat dari Matahari adalah...", "", 
+      "Merkurius", "Venus", "Bumi", "Mars", "Jupiter", 
+      "A", "Merkurius adalah planet pertama.", "IPA-01"
+    ],
+    [
+      2, "(Benar/Salah)", "L2", "Sains", "Pernyataan Mengenai Tata Surya:", "", 
+      "Matahari adalah planet", "Bumi memiliki 1 satelit alami", "Pluto adalah planet terbesar", "", "", 
+      "S, B, S", "Matahari bintang, Bulan satelit Bumi, Pluto kerdil.", "IPA-01"
+    ],
+    [
+      3, "(Sesuai/Tidak Sesuai)", "L2", "Bahasa", "Dampak Perubahan Iklim:", "", 
+      "Meningkatnya permukaan laut", "Berlangsung sangat cepat", "Hanya terjadi di kutub", "", "", 
+      "SESUAI, SESUAI, TIDAK SESUAI", "Iklim berubah global.", "IND-01"
+    ],
+    [
+      4, "Pilihan Jamak (MCMA)", "L3", "Lingkungan", "Berikut yang termasuk gas rumah kaca adalah...", "", 
+      "Karbon dioksida (CO2)", "Metana (CH4)", "Oksigen (O2)", "Nitrogen (N2)", "", 
+      "A, B", "CO2 dan CH4 adalah penyebab utama efek rumah kaca.", "IPA-01"
+    ]
+  ];
   
-  wsSoal['!cols'] = EXCEL_COLUMNS.map(() => ({ wch: 15 }));
-  wsSoal['!cols'][8] = { wch: 40 }; // Teks Soal lebih lebar
-  wsSoal['!cols'][23] = { wch: 30 }; // Pembahasan lebih lebar
+  const wsSoal = XLSX.utils.aoa_to_sheet([...headers, ...sampleData]);
+  
+  // Set column widths
+  wsSoal['!cols'] = [
+    { wch: 5 }, { wch: 22 }, { wch: 8 }, { wch: 15 }, { wch: 45 }, { wch: 15 },
+    { wch: 20 }, { wch: 20 }, { wch: 20 }, { wch: 20 }, { wch: 20 },
+    { wch: 18 }, { wch: 35 }, { wch: 15 }
+  ];
 
   XLSX.utils.book_append_sheet(wb, wsSoal, "Format Import");
-  XLSX.writeFile(wb, "Template_EduCBT_Lengkap.xlsx");
+  XLSX.writeFile(wb, "Template_Import_EduCBT.xlsx");
 };
 
 export const exportQuestionsToExcel = (questions: EduCBTQuestion[]) => {
@@ -52,45 +58,24 @@ export const exportQuestionsToExcel = (questions: EduCBTQuestion[]) => {
 
   const rows = questions.map((q) => {
     let kunci = "";
-    if (q.type === QuestionType.PilihanGanda) {
-      kunci = String.fromCharCode(65 + Number(q.correctAnswer));
-    } else if (q.type === QuestionType.MCMA) {
-      kunci = (q.correctAnswer as number[]).map(i => String.fromCharCode(65+i)).join(", ");
-    } else if (q.type === QuestionType.BenarSalah || q.type === QuestionType.SesuaiTidakSesuai) {
-      const labels = q.type === QuestionType.BenarSalah ? ['B', 'S'] : ['Sesuai', 'T.Sesuai'];
+    if (q.type === QuestionType.PilihanGanda) kunci = String.fromCharCode(65 + Number(q.correctAnswer));
+    else if (q.type === QuestionType.MCMA) kunci = (q.correctAnswer as number[]).map(i => String.fromCharCode(65+i)).join(", ");
+    else if (q.type === QuestionType.BenarSalah || q.type === QuestionType.SesuaiTidakSesuai) {
+      const labels = q.type === QuestionType.BenarSalah ? ['B', 'S'] : ['Sesuai', 'Tidak Sesuai'];
       kunci = (q.correctAnswer as boolean[]).map(b => b ? labels[0] : labels[1]).join(", ");
-    } else {
-      kunci = String(q.correctAnswer);
     }
-
-    const optImgs = q.optionImages || [];
+    else kunci = String(q.correctAnswer);
 
     return [
-      q.order,
-      q.id,
-      q.quizToken,
-      q.type,
-      q.level,
-      q.subject,
-      q.phase,
-      q.material,
-      q.text,
-      q.image || "",
-      q.options[0] || "", optImgs[0] || "",
-      q.options[1] || "", optImgs[1] || "",
-      q.options[2] || "", optImgs[2] || "",
-      q.options[3] || "", optImgs[3] || "",
-      q.options[4] || "", optImgs[4] || "",
-      kunci,
-      q.tfLabels?.true || "",
-      q.tfLabels?.false || "",
-      q.explanation
+      q.order, q.type, q.level, q.material, q.text, q.image || "",
+      q.options[0] || "", q.options[1] || "", q.options[2] || "", q.options[3] || "", q.options[4] || "",
+      kunci, q.explanation, q.quizToken
     ];
   });
 
-  const ws = XLSX.utils.aoa_to_sheet([EXCEL_COLUMNS, ...rows]);
+  const ws = XLSX.utils.aoa_to_sheet([["No", "Tipe", "Level", "Materi", "Soal", "Img", "A", "B", "C", "D", "E", "Kunci", "Pembahasan", "Token"], ...rows]);
   XLSX.utils.book_append_sheet(wb, ws, "Soal");
-  XLSX.writeFile(wb, `Export_Soal_${questions[0].quizToken}.xlsx`);
+  XLSX.writeFile(wb, "Export_Soal.xlsx");
 };
 
 const getSoalHtml = (questions: EduCBTQuestion[]) => {
@@ -138,10 +123,7 @@ const getSoalHtml = (questions: EduCBTQuestion[]) => {
                       `<div style="min-width: 16px; height: 16px; border: 1.5px solid #000; border-radius: 3px; margin-top: 2px;"></div>` : 
                       `<span style="min-width: 20px; font-weight: bold;">${String.fromCharCode(65+oIdx)}.</span>`
                     }
-                    <div style="display: flex; flex-direction: column; gap: 4px;">
-                      <span style="font-size: 12px;">${opt}</span>
-                      ${q.optionImages?.[oIdx] ? `<img src="${q.optionImages[oIdx]}" style="max-width: 120px; border-radius: 4px;" />` : ''}
-                    </div>
+                    <span style="font-size: 12px;">${opt}</span>
                   </div>
                 `).join('')}
               </div>
@@ -180,3 +162,7 @@ export const downloadSoalPdf = async (questions: EduCBTQuestion[]) => {
     document.body.removeChild(container);
   }
 };
+
+export const downloadKisiKisiPdf = () => {};
+export const downloadSoalDoc = () => {};
+export const downloadKisiKisiDoc = () => {};
